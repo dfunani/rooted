@@ -52,9 +52,16 @@ export default function Page() {
     });
 
     if (response.ok) {
+      const data = await response.json();
+      if (data.message?.emailVerificationRequired) {
+        router.push(`/auth/user/verify`);
+        return;
+      }
       router.push(`/auth/user/login?resolve=Created`);
     } else if (response.status === 409) {
       router.push(`/auth/user/login?resolve=Conflict`);
+    } else if (response.status === 429) {
+      setResolveText("Too many attempts. Please wait and try again.");
     } else {
       setResolveText("Invalid submission. Please complete all fields.");
     }
@@ -66,7 +73,8 @@ export default function Page() {
         <p className={styles.eyebrow}>Start your lineage</p>
         <h1 className={styles.heroBrand}>Rooted</h1>
         <p className={styles.heroCopy}>
-          Create an account, add photos, and grow a tree you can share with family.
+          Create an account, add photos, and grow a tree you can share with
+          family.
         </p>
       </section>
       <div className={styles["login-container"]}>
@@ -77,7 +85,7 @@ export default function Page() {
         <p className={styles.subtitle}>
           {submit
             ? "Add a photo and a few details — you can edit them later."
-            : "Passwords need 8+ characters, a number, and a symbol."}
+            : "We’ll email a verification link before you can sign in."}
         </p>
         {!submit && (
           <Login

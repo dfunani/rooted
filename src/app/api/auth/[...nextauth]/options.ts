@@ -25,10 +25,15 @@ export const authOptions = {
         });
         if (!newUser) return null;
 
+        // Block sign-in until verified (legacy users default to verified in User model)
+        if (!newUser.emailVerified) {
+          return null;
+        }
+
         const data = LoginUser.safeParse(newUser);
         if (!data.success) return null;
 
-        return data.data;
+        return { ...data.data, emailVerified: true };
       },
     }),
   ],
@@ -44,6 +49,7 @@ export const authOptions = {
       }
 
       if (user?.id) token.id = user.id;
+      token.emailVerified = true;
 
       return token;
     },
@@ -60,6 +66,9 @@ export const authOptions = {
 
       session.user.isNewUser = token?.isNewUser as boolean;
       session.user.id = token?.id as string;
+      session.user.emailVerified = Boolean(
+        (token as { emailVerified?: boolean }).emailVerified ?? true
+      );
 
       return session;
     },

@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { Handle, Position } from "@xyflow/react";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
+
 import styles from "@/src/components/canvas.module.css";
-import { EdgeType, NodeDataType, NodeType } from "@/src/public/types/editor";
+import { NodeDataType } from "@/src/public/types/editor";
 import { StateReducerType } from "@/src/public/types/states";
 import Modal from "@/src/components/modal";
-import { UPDATE } from "@/lib/reducers/editor";
+import { useEditorActions } from "@/src/public/utils/editor-context";
 
 type Props = {
   id: string;
@@ -16,15 +17,16 @@ type Props = {
 };
 
 export default function CanvasItem(props: Props) {
-  const dispatch = useDispatch();
   const userState = useSelector((state: StateReducerType) => state.user);
-  const editorState = useSelector((state: StateReducerType) => state.editor);
+  const { getNodes, getEdges, setGraph, updateNodeData, readOnly } =
+    useEditorActions();
 
   const [expanded, setExpanded] = useState(false);
   const [modal, setModal] = useState(false);
 
-  async function saveNodes(nodes: NodeType[], edges: EdgeType[]) {
-    const response = await fetch("/api/editor", {
+  async function persist(nodes = getNodes(), edges = getEdges()) {
+    if (!userState.id) return;
+    await fetch("/api/editor", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -33,31 +35,24 @@ export default function CanvasItem(props: Props) {
         edges,
       }),
     });
-    if (response.ok) {
-      dispatch(UPDATE({ nodes: nodes ?? [], edges: edges ?? [] }));
-    }
   }
 
   async function deleteNodes(id: string) {
-    const nodes = editorState.nodes?.filter((value: NodeType) => value.id !== id);
-    const edges = editorState.edges?.filter(
-      (value: EdgeType) => value.source !== id && value.target !== id
+    const nodes = getNodes().filter((value) => value.id !== id);
+    const edges = getEdges().filter(
+      (value) => value.source !== id && value.target !== id
     );
-    await saveNodes(nodes ?? [], edges ?? []);
+    setGraph(nodes, edges);
+    await persist(nodes, edges);
     setExpanded(false);
   }
 
   async function updateNodes(id: string, new_node: Partial<NodeDataType>) {
-    const nodes = editorState.nodes?.map((node: NodeType) => {
-      if (node.id === id) {
-        return {
-          ...node,
-          data: { ...node.data, ...new_node },
-        };
-      }
-      return node;
-    });
-    await saveNodes(nodes ?? [], editorState.edges ?? []);
+    updateNodeData(id, new_node);
+    const nodes = getNodes().map((node) =>
+      node.id === id ? { ...node, data: { ...node.data, ...new_node } } : node
+    );
+    await persist(nodes, getEdges());
     setExpanded(false);
   }
 
@@ -104,43 +99,45 @@ export default function CanvasItem(props: Props) {
             {props.data.city}, {props.data.country}
           </div>
           <div className={styles["node-dob"]}>{props.data.dob}</div>
-          <div className={styles["node-buttons"]}>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setModal(true);
-                setExpanded(false);
-              }}
-              aria-label="Edit"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteNodes(props.id);
-              }}
-              aria-label="Delete"
-            >
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                downloadImage();
-              }}
-              aria-label="Download photo"
-            >
-              Photo
-            </button>
-          </div>
+          {!readOnly && (
+            <div className={styles["node-buttons"]}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setModal(true);
+                  setExpanded(false);
+                }}
+                aria-label="Edit"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteNodes(props.id);
+                }}
+                aria-label="Delete"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  downloadImage();
+                }}
+                aria-label="Download photo"
+              >
+                Photo
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {modal && (
+      {modal && !readOnly && (
         <Modal
           setClicked={setExpanded}
           setModal={setModal}

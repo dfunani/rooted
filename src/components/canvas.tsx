@@ -6,15 +6,13 @@ import {
   MiniMap,
   Controls,
   Background,
-  applyNodeChanges,
-  applyEdgeChanges,
   BackgroundVariant,
   Panel,
   Connection,
-  NodeChange,
-  EdgeChange,
   ReactFlowInstance,
   MarkerType,
+  useNodesState,
+  useEdgesState,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -25,6 +23,7 @@ import MenuItem from "@/src/components/menu-item";
 import { buildDate, generateImages } from "@/src/public/utils/factories";
 import {
   EdgeType,
+  NodeDataType,
   NodeType,
   RELATIONSHIP_LABELS,
   RelationshipType,
@@ -33,6 +32,7 @@ import { StateReducerType } from "@/src/public/types/states";
 import CanvasItem from "@/src/components/canvas-item";
 import RelationshipEdge from "@/src/components/relationship-edge";
 import ProfilePanel from "@/src/components/profile-panel";
+import { EditorProvider } from "@/src/public/utils/editor-context";
 import { useSession } from "next-auth/react";
 import { useDispatch, useSelector } from "react-redux";
 import { UPDATE as userUpdate } from "@/lib/reducers/user";
@@ -43,14 +43,34 @@ const nodeTypes = { "Canvas-Item": CanvasItem };
 const edgeTypes = { relationship: RelationshipEdge };
 
 type Toast = { text: string; status: "error" | "success" };
+type PendingConnection = Connection;
 
-type PendingConnection = Connection & { id?: string };
+function cloneNodes(list: NodeType[]): NodeType[] {
+  return list.map((node) => ({
+    ...node,
+    position: { ...node.position },
+    data: { ...node.data },
+  }));
+}
+
+function cloneEdges(list: EdgeType[]): EdgeType[] {
+  return list.map((edge) => ({
+    ...edge,
+    data: edge.data ? { ...edge.data } : undefined,
+  }));
+}
 
 export default function Canvas() {
   const { data: session, status } = useSession();
   const dispatch = useDispatch();
   const userState = useSelector((state: StateReducerType) => state.user);
-  const editorState = useSelector((state: StateReducerType) => state.editor);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<NodeType>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<EdgeType>([]);
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
 
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -63,48 +83,31 @@ export default function Canvas() {
   );
   const bootstrapped = useRef(false);
 
-  // React Flow mutates measured width/height on node objects. Redux/Immer
-  // freezes state, so pass plain clones into the canvas.
-  const nodes = useMemo(
-    () =>
-      (editorState.nodes ?? []).map((node) => ({
-        ...node,
-        position: { ...node.position },
-        data: { ...node.data },
-      })),
-    [editorState.nodes]
-  );
-  const edges = useMemo(
-    () =>
-      (editorState.edges ?? []).map((edge) => ({
-        ...edge,
-        data: edge.data ? { ...edge.data } : undefined,
-      })),
-    [editorState.edges]
-  );
-
-  const onNodesChange = useCallback(
-    (changes: NodeChange<NodeType>[]) => {
-      dispatch(
-        editorUpdate({
-          nodes: applyNodeChanges(changes, nodes),
-          edges,
-        })
-      );
-    },
-    [dispatch, nodes, edges]
-  );
-
-  const onEdgesChange = useCallback(
-    (changes: EdgeChange<EdgeType>[]) => {
-      dispatch(
-        editorUpdate({
-          edges: applyEdgeChanges(changes, edges),
-          nodes,
-        })
-      );
-    },
-    [dispatch, nodes, edges]
+  const editorActions = useMemo(
+    () => ({
+      getNodes: () => nodesRef.current,
+      getEdges: () => edgesRef.current,
+      setGraph: (nextNodes: NodeType[], nextEdges: EdgeType[]) => {
+        setNodes(cloneNodes(nextNodes));
+        setEdges(cloneEdges(nextEdges));
+      },
+      updateNodeData: (id: string, data: Partial<NodeDataType>) => {
+        setNodes((current) =>
+          current.map((node) =>
+            node.id === id
+              ? { ...node, data: { ...node.data, ...data } }
+              : node
+          )
+        );
+      },
+      removeNode: (id: string) => {
+        setNodes((current) => current.filter((node) => node.id !== id));
+        setEdges((current) =>
+          current.filter((edge) => edge.source !== id && edge.target !== id)
+        );
+      },
+    }),
+    [setNodes, setEdges]
   );
 
   const onConnect = useCallback((params: Connection) => {
@@ -114,16 +117,17 @@ export default function Canvas() {
 
   function confirmRelationship(relationship: RelationshipType) {
     if (editingEdgeId) {
-      const next = edges.map((edge) =>
-        edge.id === editingEdgeId
-          ? {
-              ...edge,
-              label: RELATIONSHIP_LABELS[relationship],
-              data: { relationship },
-            }
-          : edge
+      setEdges((current) =>
+        current.map((edge) =>
+          edge.id === editingEdgeId
+            ? {
+                ...edge,
+                label: RELATIONSHIP_LABELS[relationship],
+                data: { relationship },
+              }
+            : edge
+        )
       );
-      dispatch(editorUpdate({ nodes, edges: next }));
       setEditingEdgeId(null);
       return;
     }
@@ -141,27 +145,29 @@ export default function Canvas() {
       data: { relationship },
     };
 
-    dispatch(editorUpdate({ nodes, edges: [...edges, edge] }));
+    setEdges((current) => [...current, edge]);
     setPendingConnection(null);
   }
 
   function addNodeAt(position: { x: number; y: number }, src: string) {
     const id = uuid4();
-    const node: NodeType = {
-      id,
-      position,
-      type: "Canvas-Item",
-      data: {
-        name: "New",
-        surname: "Relative",
-        city: "Hometown",
-        country: "Country",
-        dob: buildDate(new Date()),
-        image: src,
-        label: `Canvas-Node-${id}`,
+    setNodes((current) => [
+      ...current,
+      {
+        id,
+        position,
+        type: "Canvas-Item",
+        data: {
+          name: "First",
+          surname: "Name",
+          city: "City",
+          country: "Country",
+          dob: buildDate(new Date()),
+          image: src,
+          label: `Canvas-Node-${id}`,
+        },
       },
-    };
-    dispatch(editorUpdate({ nodes: [...nodes, node], edges }));
+    ]);
   }
 
   function onDragOver(event: React.DragEvent) {
@@ -193,10 +199,19 @@ export default function Canvas() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: userState.id,
-          nodes,
-          edges,
+          nodes: nodesRef.current,
+          edges: edgesRef.current,
         }),
       });
+
+      if (response.ok) {
+        dispatch(
+          editorUpdate({
+            nodes: cloneNodes(nodesRef.current),
+            edges: cloneEdges(edgesRef.current),
+          })
+        );
+      }
 
       setToast(
         response.ok
@@ -210,7 +225,11 @@ export default function Canvas() {
 
   async function deleteEditor() {
     if (!userState.id) return;
-    if (!window.confirm("Delete your entire family tree? This cannot be undone.")) {
+    if (
+      !window.confirm(
+        "Delete your entire family tree? This cannot be undone."
+      )
+    ) {
       return;
     }
     try {
@@ -220,6 +239,8 @@ export default function Canvas() {
         body: JSON.stringify({ user_id: userState.id }),
       });
       if (response.ok) {
+        setNodes([]);
+        setEdges([]);
         dispatch(editorClear());
         dispatch(editorUpdate({ nodes: [], edges: [] }));
         setToast({ text: "Family tree deleted.", status: "success" });
@@ -240,7 +261,11 @@ export default function Canvas() {
   }, []);
 
   useEffect(() => {
-    if (status !== "authenticated" || !session?.user?.id || bootstrapped.current) {
+    if (
+      status !== "authenticated" ||
+      !session?.user?.id ||
+      bootstrapped.current
+    ) {
       return;
     }
     bootstrapped.current = true;
@@ -264,27 +289,25 @@ export default function Canvas() {
         const profile = await profileRes.json();
         dispatch(profileUpdate(profile.message));
       } else {
-        setToast({
-          text: "Profile failed to load.",
-          status: "error",
-        });
+        setToast({ text: "Profile failed to load.", status: "error" });
       }
 
       if (editorRes.ok) {
         const data = await editorRes.json();
-        dispatch(
-          editorUpdate({
-            nodes: data.message.nodes ?? [],
-            edges: data.message.edges ?? [],
-          })
-        );
+        const loadedNodes = cloneNodes(data.message.nodes ?? []);
+        const loadedEdges = cloneEdges(data.message.edges ?? []);
+        setNodes(loadedNodes);
+        setEdges(loadedEdges);
+        dispatch(editorUpdate({ nodes: loadedNodes, edges: loadedEdges }));
       } else {
+        setNodes([]);
+        setEdges([]);
         dispatch(editorUpdate({ nodes: [], edges: [] }));
       }
     }
 
     load();
-  }, [dispatch, session, status]);
+  }, [dispatch, session, status, setNodes, setEdges]);
 
   if (status === "loading") {
     return <div className="main">Loading Rooted…</div>;
@@ -295,127 +318,147 @@ export default function Canvas() {
   }
 
   return (
-    <div className={styles.canvas}>
-      <ProfilePanel
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onDeleteTree={deleteEditor}
-      />
+    <EditorProvider value={editorActions}>
+      <div className={styles.canvas}>
+        <ProfilePanel
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          onDeleteTree={deleteEditor}
+        />
 
-      {(pendingConnection || editingEdgeId) && (
-        <div className={styles.relationshipPicker}>
-          <div className={styles.relationshipCard}>
-            <h3>{editingEdgeId ? "Edit relationship" : "How are they related?"}</h3>
-            <p style={{ margin: 0, color: "var(--sage)" }}>
-              Choose a label for this connection.
-            </p>
-            <div className={styles.relationshipOptions}>
-              {(Object.keys(RELATIONSHIP_LABELS) as RelationshipType[]).map(
-                (key) => (
-                  <button key={key} type="button" onClick={() => confirmRelationship(key)}>
-                    {RELATIONSHIP_LABELS[key]}
-                  </button>
-                )
-              )}
-            </div>
-            <button
-              type="button"
-              className={styles.iconButton}
-              onClick={() => {
-                setPendingConnection(null);
-                setEditingEdgeId(null);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
-        onInit={(instance) => {
-          reactFlowRef.current = instance;
-        }}
-        onEdgeClick={(_, edge) => {
-          setEditingEdgeId(edge.id);
-          setPendingConnection(null);
-        }}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView
-        defaultEdgeOptions={{
-          type: "relationship",
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#1e3d32" },
-          style: { stroke: "#3d5c4e", strokeWidth: 2 },
-        }}
-      >
-        <Controls />
-        <MiniMap pannable zoomable />
-        <Background variant={BackgroundVariant.Dots} gap={18} size={1.5} color="#5c7a6a55" />
-
-        <Panel position="top-left">
-          <div className={styles.toolbar}>
-            <span className={styles.brandChip}>Rooted</span>
-            <button
-              type="button"
-              className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
-              onClick={saveNodes}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className={styles.toolbarButton}
-              onClick={() => setPaletteOpen((v) => !v)}
-            >
-              {paletteOpen ? "Hide people" : "Add people"}
-            </button>
-            <button
-              type="button"
-              className={styles.toolbarButton}
-              onClick={() => setMenuOpen(true)}
-            >
-              Account
-            </button>
-          </div>
-          {paletteOpen && (
-            <div className={styles.palette}>
-              <h3 className={styles.paletteTitle}>Add a person</h3>
-              <p className={styles.paletteHint}>
-                Drag an avatar onto the canvas, then connect relatives and label the relationship.
+        {(pendingConnection || editingEdgeId) && (
+          <div className={styles.relationshipPicker}>
+            <div className={styles.relationshipCard}>
+              <h3>
+                {editingEdgeId ? "Edit relationship" : "How are they related?"}
+              </h3>
+              <p style={{ margin: 0, color: "var(--sage)" }}>
+                Choose a label for this connection.
               </p>
-              <ul className={styles.paletteGrid}>{paletteItems}</ul>
+              <div className={styles.relationshipOptions}>
+                {(Object.keys(RELATIONSHIP_LABELS) as RelationshipType[]).map(
+                  (key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => confirmRelationship(key)}
+                    >
+                      {RELATIONSHIP_LABELS[key]}
+                    </button>
+                  )
+                )}
+              </div>
+              <button
+                type="button"
+                className={styles.iconButton}
+                onClick={() => {
+                  setPendingConnection(null);
+                  setEditingEdgeId(null);
+                }}
+              >
+                Cancel
+              </button>
             </div>
-          )}
-        </Panel>
+          </div>
+        )}
+
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          onInit={(instance) => {
+            reactFlowRef.current = instance;
+          }}
+          onEdgeClick={(_, edge) => {
+            setEditingEdgeId(edge.id);
+            setPendingConnection(null);
+          }}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          fitView
+          defaultEdgeOptions={{
+            type: "relationship",
+            markerEnd: { type: MarkerType.ArrowClosed, color: "#1e3d32" },
+            style: { stroke: "#3d5c4e", strokeWidth: 2 },
+          }}
+        >
+          <Controls />
+          <MiniMap pannable zoomable />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={18}
+            size={1.5}
+            color="#5c7a6a55"
+          />
+
+          <Panel position="top-left">
+            <div className={styles.toolbar}>
+              <span className={styles.brandChip}>Rooted</span>
+              <button
+                type="button"
+                className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+                onClick={saveNodes}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className={styles.toolbarButton}
+                onClick={() => setPaletteOpen((v) => !v)}
+              >
+                {paletteOpen ? "Hide people" : "Add people"}
+              </button>
+              <button
+                type="button"
+                className={styles.toolbarButton}
+                onClick={() => setMenuOpen(true)}
+              >
+                Account
+              </button>
+            </div>
+            {paletteOpen && (
+              <div className={styles.palette}>
+                <h3 className={styles.paletteTitle}>Add a person</h3>
+                <p className={styles.paletteHint}>
+                  Drag an avatar onto the canvas, then connect relatives and
+                  label the relationship.
+                </p>
+                <ul className={styles.paletteGrid}>{paletteItems}</ul>
+              </div>
+            )}
+          </Panel>
 
         {nodes.length === 0 && (
           <div className={styles.emptyState}>
             <div className={styles.emptyCard}>
               <h2>Plant your first root</h2>
               <p>
-                Drag someone from the palette onto the canvas to begin your family tree.
+                Drag a person onto the canvas, double-click to edit their
+                details, then connect relatives and label how they&apos;re
+                related. Save when you&apos;re ready — sharing stays private
+                until you enable it in Account.
               </p>
             </div>
           </div>
         )}
-      </ReactFlow>
+        </ReactFlow>
 
-      {toast && (
-        <div className={`${styles.toast} ${styles[toast.status]}`}>
-          <span>{toast.text}</span>
-          <span className={styles["error-close"]} onClick={() => setToast(null)}>
-            ×
-          </span>
-        </div>
-      )}
-    </div>
+        {toast && (
+          <div className={`${styles.toast} ${styles[toast.status]}`}>
+            <span>{toast.text}</span>
+            <span
+              className={styles["error-close"]}
+              onClick={() => setToast(null)}
+            >
+              ×
+            </span>
+          </div>
+        )}
+      </div>
+    </EditorProvider>
   );
 }

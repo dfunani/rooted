@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        env:
+          # Build-time placeholders — real secrets come from the host at runtime
+          DB_URL: mongodb://127.0.0.1:27017
+          DB_NAME: rooted_ci
+          NEXTAUTH_SECRET: ci-nextauth-secret-placeholder-32chars
+          NEXTAUTH_URL: http://localhost:3000
+          CRYPTO_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          JWT_SECRET: ci-jwt-secret
+          AUTO_VERIFY_EMAIL: "true"
+        run: npm run build

@@ -10,12 +10,24 @@ import { ObjectId } from "mongodb";
 import Model from "@/src/public/models/model";
 import { isDataUrl, storeDataUrl } from "@/src/public/utils/media";
 
+export type UserAuthRow = UserType & {
+  emailVerified: boolean;
+  emailHash: string;
+};
+
 export default class User extends Model {
   constructor(db_uri: string, db_name: string) {
     super(db_uri, db_name, "users");
   }
 
-  async getUser(credentials: CredentialsType): Promise<UserType | null> {
+  async findByEmailHash(email: string) {
+    const collection = await this.getCollection();
+    const client = new Security();
+    const emailHash = client.hash(email.toLowerCase());
+    return collection.findOne({ emailHash });
+  }
+
+  async getUser(credentials: CredentialsType): Promise<UserAuthRow | null> {
     const collection = await this.getCollection();
     const client = new Security();
     const emailLookup = client.hash(credentials.email.toLowerCase());
@@ -23,7 +35,6 @@ export default class User extends Model {
     let response = await collection.findOne({ emailHash: emailLookup });
 
     if (!response) {
-      // Legacy rows: email was AES with fixed IV
       const legacyEmail = (() => {
         try {
           const key = Buffer.from(process.env.CRYPTO_KEY ?? "", "hex");
@@ -79,16 +90,17 @@ export default class User extends Model {
       password: response.password,
       createdAt: response.createdAt,
       updatedAt: response.updatedAt,
+      // Legacy accounts created before verification shipped stay accessible
+      emailVerified: response.emailVerified ?? true,
+      emailHash: response.emailHash ?? emailLookup,
     };
   }
 
   async getProfile(id: string): Promise<ProfileType | null> {
     const collection = await this.getCollection();
-
     const response = await collection.findOne({
       _id: ObjectId.createFromHexString(id),
     });
-
     if (!response) return null;
 
     return {
@@ -101,6 +113,14 @@ export default class User extends Model {
     };
   }
 
+  async getEmailVerified(id: string): Promise<boolean> {
+    const collection = await this.getCollection();
+    const response = await collection.findOne({
+      _id: ObjectId.createFromHexString(id),
+    });
+    return Boolean(response?.emailVerified);
+  }
+
   async createUser(registration: RegistrationType) {
     const collection = await this.getCollection();
     const client = new Security();
@@ -109,44 +129,73 @@ export default class User extends Model {
     const existing = await collection.findOne({ emailHash });
     if (existing) return null;
 
-    // Legacy conflict check
-    const legacyExisting = await collection.findOne({
-      email: registration.email,
-    });
-    if (legacyExisting) return null;
-
     let image = registration.image as string | null;
     if (image && isDataUrl(image)) {
-      const stored = await storeDataUrl(image);
+      const stored = await storeDataUrl(image, undefined);
       image = stored.url;
     }
 
     const password = await client.hashPassword(registration.password);
     const email = client.encrypt(registration.email);
-
     const now = new Date();
+
+    // Auto-verify only when explicitly allowed (local smoke tests)
+    const autoVerify = process.env.AUTO_VERIFY_EMAIL === "true";
+
     const document = await collection.insertOne({
       ...registration,
       email,
       emailHash,
       password,
       image,
+      emailVerified: autoVerify,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     });
 
-    return { id: document.insertedId.toString() };
+    return {
+      id: document.insertedId.toString(),
+      emailVerified: autoVerify,
+      plainEmail: registration.email,
+    };
+  }
+
+  async markEmailVerified(userId: string) {
+    const collection = await this.getCollection();
+    await collection.updateOne(
+      { _id: new ObjectId(userId) },
+      {
+        $set: {
+          emailVerified: true,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+  }
+
+  async updatePassword(userId: string, password: string) {
+    const collection = await this.getCollection();
+    const client = new Security();
+    const hashed = await client.hashPassword(password);
+    await collection.updateOne(
+      { _id: new ObjectId(userId) },
+      {
+        $set: {
+          password: hashed,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
   }
 
   async updateUser(id: string, profile: ProfileType) {
     const collection = await this.getCollection();
-
     const existing_user = await collection.findOne({ _id: new ObjectId(id) });
     if (!existing_user) return null;
 
     let image = profile.image as string | null;
     if (image && isDataUrl(image)) {
-      const stored = await storeDataUrl(image);
+      const stored = await storeDataUrl(image, id);
       image = stored.url;
     }
 
@@ -166,10 +215,8 @@ export default class User extends Model {
 
   async delete(id: string) {
     const collection = await this.getCollection();
-
     const existing_user = await collection.findOne({ _id: new ObjectId(id) });
     if (!existing_user) return null;
-
     await collection.deleteOne({ _id: new ObjectId(id) });
     return { id };
   }

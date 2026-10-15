@@ -24,6 +24,7 @@ declare module "next-auth" {
       isNewUser: boolean;
       id: string;
       email: string;
+      emailVerified: boolean;
     } & Omit<DefaultSession["user"], "image">;
   }
 
@@ -31,6 +32,7 @@ declare module "next-auth" {
     id: string;
     isNewUser: boolean;
     accessToken: string;
+    emailVerified?: boolean;
   }
 }
 

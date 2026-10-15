@@ -5,6 +5,7 @@ import styles from "@/src/public/styles/auth.module.css";
 import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 import Login from "@/src/components/login";
 import { CredentialsType } from "@/src/public/types/user";
@@ -20,12 +21,12 @@ export default function Page() {
     password: "",
   });
   const [resolveText, setresolveText] = useState<string | null>(null);
+  const [needsVerify, setNeedsVerify] = useState(false);
 
   function handleUpdateCredentials(key: string, value: string) {
     if (resolveText) setresolveText(null);
-    setCredentials((prevCreds: CredentialsType) => {
-      return { ...prevCreds, [key]: value };
-    });
+    setNeedsVerify(false);
+    setCredentials((prev) => ({ ...prev, [key]: value }));
   }
 
   async function handleLogin() {
@@ -36,8 +37,27 @@ export default function Page() {
     });
 
     if (!response?.ok) {
-      router.push("/auth/user/login?resolve=Invalid");
-    } else router.push("/");
+      setNeedsVerify(true);
+      setresolveText(
+        "Invalid email/password, or your email is not verified yet. You can resend a verification link below."
+      );
+      return;
+    }
+    router.push("/");
+  }
+
+  async function resendVerification() {
+    if (!credentials.email) return;
+    const response = await fetch("/api/auth/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: credentials.email }),
+    });
+    setresolveText(
+      response.ok
+        ? "If that account needs verification, we sent a new link."
+        : "Could not resend right now."
+    );
   }
 
   useEffect(() => {
@@ -53,7 +73,8 @@ export default function Page() {
         <p className={styles.eyebrow}>Family trees, grown gently</p>
         <h1 className={styles.heroBrand}>Rooted</h1>
         <p className={styles.heroCopy}>
-          Map the people who made you — photos, places, and the ties between them.
+          Map the people who made you — photos, places, and the ties between
+          them.
         </p>
       </section>
       <div className={styles["login-container"]}>
@@ -67,7 +88,19 @@ export default function Page() {
           handleUpdateCredentials={handleUpdateCredentials}
           handleLogin={handleLogin}
         />
+        <p className={styles.subtitle}>
+          <Link href="/auth/user/forgot">Forgot password?</Link>
+        </p>
         {resolveText && <p className={styles.error}>{resolveText}</p>}
+        {needsVerify && (
+          <button
+            type="button"
+            className={`${styles.button} ${styles.buttonSecondary}`}
+            onClick={resendVerification}
+          >
+            Resend verification email
+          </button>
+        )}
       </div>
     </div>
   );

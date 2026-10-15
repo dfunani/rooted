@@ -15,6 +15,7 @@ export type StoredMedia = {
   key: string;
   provider: "gridfs" | "s3";
   contentType: string;
+  ownerId?: string;
 };
 
 function s3Configured(): boolean {
@@ -55,7 +56,8 @@ async function compressImage(
 async function uploadGridFS(
   buffer: Buffer,
   contentType: string,
-  filename: string
+  filename: string,
+  ownerId?: string
 ): Promise<StoredMedia> {
   const { db_url, db_name } = getDatabaseConfig();
   const client = await getMongoClient(db_url);
@@ -65,7 +67,10 @@ async function uploadGridFS(
   await new Promise<void>((resolve, reject) => {
     const stream = bucket.openUploadStreamWithId(id, filename, {
       contentType,
-      metadata: { uploadedAt: new Date().toISOString() },
+      metadata: {
+        uploadedAt: new Date().toISOString(),
+        ownerId: ownerId ?? null,
+      },
     });
     stream.on("finish", () => resolve());
     stream.on("error", reject);
@@ -77,6 +82,7 @@ async function uploadGridFS(
     key,
     provider: "gridfs",
     contentType,
+    ownerId,
     url: `/api/media/${key}`,
   };
 }
@@ -84,10 +90,11 @@ async function uploadGridFS(
 async function uploadS3(
   buffer: Buffer,
   contentType: string,
-  filename: string
+  filename: string,
+  ownerId?: string
 ): Promise<StoredMedia> {
   const bucket = process.env.S3_BUCKET!;
-  const key = `rooted/${uuid4()}-${filename}`;
+  const key = `rooted/${ownerId ? `${ownerId}/` : ""}${uuid4()}-${filename}`;
   const client = getS3Client();
 
   await client.send(
@@ -96,6 +103,7 @@ async function uploadS3(
       Key: key,
       Body: buffer,
       ContentType: contentType,
+      Metadata: ownerId ? { ownerid: ownerId } : undefined,
     })
   );
 
@@ -104,42 +112,67 @@ async function uploadS3(
     ? `${publicBase.replace(/\/$/, "")}/${key}`
     : `/api/media/s3?key=${encodeURIComponent(key)}`;
 
-  return { key, provider: "s3", contentType, url };
+  return { key, provider: "s3", contentType, ownerId, url };
 }
 
 export async function storeMedia(
   input: Buffer,
   contentType: string,
-  filename = "upload.webp"
+  filename = "upload.webp",
+  ownerId?: string
 ): Promise<StoredMedia> {
   const { buffer, contentType: type } = await compressImage(input, contentType);
   if (s3Configured()) {
-    return uploadS3(buffer, type, filename.replace(/\.[^.]+$/, ".webp"));
+    return uploadS3(
+      buffer,
+      type,
+      filename.replace(/\.[^.]+$/, ".webp"),
+      ownerId
+    );
   }
-  return uploadGridFS(buffer, type, filename.replace(/\.[^.]+$/, ".webp"));
+  return uploadGridFS(
+    buffer,
+    type,
+    filename.replace(/\.[^.]+$/, ".webp"),
+    ownerId
+  );
 }
 
-export async function storeDataUrl(dataUrl: string): Promise<StoredMedia> {
+export async function storeDataUrl(
+  dataUrl: string,
+  ownerId?: string
+): Promise<StoredMedia> {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) {
     throw new Error("Invalid data URL");
   }
   const contentType = match[1];
   const buffer = Buffer.from(match[2], "base64");
-  return storeMedia(buffer, contentType);
+  return storeMedia(buffer, contentType, "upload.webp", ownerId);
+}
+
+export async function getGridFSMeta(id: string) {
+  if (!ObjectId.isValid(id)) return null;
+  const { db_url, db_name } = getDatabaseConfig();
+  const client = await getMongoClient(db_url);
+  const bucket = new GridFSBucket(client.db(db_name), { bucketName: "media" });
+  const files = await bucket.find({ _id: new ObjectId(id) }).toArray();
+  if (!files.length) return null;
+  return {
+    contentType: files[0].contentType ?? "application/octet-stream",
+    ownerId: (files[0].metadata?.ownerId as string | null) ?? null,
+  };
 }
 
 export async function readGridFS(
   id: string
-): Promise<{ buffer: Buffer; contentType: string } | null> {
-  if (!ObjectId.isValid(id)) return null;
+): Promise<{ buffer: Buffer; contentType: string; ownerId: string | null } | null> {
+  const meta = await getGridFSMeta(id);
+  if (!meta) return null;
 
   const { db_url, db_name } = getDatabaseConfig();
   const client = await getMongoClient(db_url);
   const bucket = new GridFSBucket(client.db(db_name), { bucketName: "media" });
-
-  const files = await bucket.find({ _id: new ObjectId(id) }).toArray();
-  if (!files.length) return null;
 
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
@@ -151,13 +184,14 @@ export async function readGridFS(
 
   return {
     buffer: Buffer.concat(chunks),
-    contentType: files[0].contentType ?? "application/octet-stream",
+    contentType: meta.contentType,
+    ownerId: meta.ownerId,
   };
 }
 
 export async function readS3(
   key: string
-): Promise<{ buffer: Buffer; contentType: string } | null> {
+): Promise<{ buffer: Buffer; contentType: string; ownerId: string | null } | null> {
   if (!s3Configured()) return null;
   const client = getS3Client();
   const response = await client.send(
@@ -171,6 +205,7 @@ export async function readS3(
   return {
     buffer: Buffer.from(bytes),
     contentType: response.ContentType ?? "application/octet-stream",
+    ownerId: response.Metadata?.ownerid ?? null,
   };
 }
 

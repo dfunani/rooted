@@ -1,4 +1,5 @@
 import User from "@/src/public/models/users";
+import AuthTokenStore from "@/src/public/models/tokens";
 import {
   UserProfile,
   PatchDetails,
@@ -10,9 +11,14 @@ import {
   generateServerResponses,
   getIdFromRequest,
 } from "@/src/public/utils/factories";
-
 import { AuthenticationError } from "@/src/public/errors/auth";
 import { AuthService } from "@/src/public/models/auth";
+import {
+  clientKey,
+  rateLimit,
+  rateLimitResponse,
+} from "@/src/public/utils/rate-limit";
+import { sendVerificationEmail } from "@/src/public/utils/email";
 
 /** Get User profile. */
 export async function GET(request: Request) {
@@ -30,14 +36,11 @@ export async function GET(request: Request) {
 
     const data = UserProfile.safeParse(profile);
     if (!data.success) {
-      console.log(`User Error: ${data.error}`);
       return generateServerResponses("Invalid User Response.", 500);
     }
 
     return generateServerResponses(data.data, 200);
   } catch (error) {
-    console.log(`User Error: ${error}`);
-
     if (error instanceof AuthenticationError) {
       return generateServerResponses("Unauthorized User Operations.", 403);
     }
@@ -45,34 +48,50 @@ export async function GET(request: Request) {
   }
 }
 
-/** Create/Register a New User (public). */
+/** Create/Register a New User (public, rate-limited). */
 export async function POST(request: Request) {
+  const limited = rateLimit(clientKey(request, "register"), 5, 15 * 60 * 1000);
+  if (!limited.ok) return rateLimitResponse(limited.retryAfterSec);
+
   try {
     const res = await request.json();
-
     const registration = RegisterUser.safeParse(res);
     if (!registration.success) {
-      console.log(`Invalid User Request: ${registration.error}`);
       return generateServerResponses("Invalid User Request.", 400);
     }
 
     const { db_url, db_name } = getDatabaseConfig();
-
     const user = new User(db_url, db_name);
     const registeredUser = await user.createUser(registration.data);
     if (!registeredUser) {
       return generateServerResponses("User Already Exists.", 409);
     }
 
-    const data = FetchUser.safeParse(registeredUser);
+    if (!registeredUser.emailVerified) {
+      const tokens = new AuthTokenStore(db_url, db_name);
+      const { token } = await tokens.create({
+        kind: "email_verify",
+        userId: registeredUser.id,
+        email: registeredUser.plainEmail,
+        ttlMs: 24 * 60 * 60 * 1000,
+      });
+      await sendVerificationEmail(registeredUser.plainEmail, token);
+    }
+
+    const data = FetchUser.safeParse({ id: registeredUser.id });
     if (!data.success) {
-      console.log(`Invalid User Response: ${data.error}`);
       return generateServerResponses("Invalid User Response.", 500);
     }
 
-    return generateServerResponses(data.data, 201);
+    return generateServerResponses(
+      {
+        ...data.data,
+        emailVerificationRequired: !registeredUser.emailVerified,
+      },
+      201
+    );
   } catch (error) {
-    console.log(`User Error: ${error}`);
+    console.error(`User Error: ${error}`);
     return generateServerResponses("Internal Server Error.", 500);
   }
 }
@@ -85,12 +104,11 @@ export async function PATCH(request: Request) {
 
     const patchDetails = PatchDetails.safeParse(res);
     if (!patchDetails.success) {
-      console.log(`Invalid User Request: ${patchDetails.error}`);
       return generateServerResponses("Invalid User Update Request.", 400);
     }
 
     const { db_url, db_name } = getDatabaseConfig();
-    const user = await new User(db_url, db_name);
+    const user = new User(db_url, db_name);
 
     const updatedUser = await user.updateUser(
       patchDetails.data.id,
@@ -103,18 +121,14 @@ export async function PATCH(request: Request) {
 
     const data = FetchUser.safeParse(updatedUser);
     if (!data.success) {
-      console.log(`Invalid User Response: ${data.error}`);
       return generateServerResponses("Invalid User Response.", 500);
     }
 
     return generateServerResponses(data.data, 200);
   } catch (error) {
-    console.log(`User Error: ${error}`);
-
     if (error instanceof AuthenticationError) {
       return generateServerResponses("Unauthorized User Operations.", 403);
     }
-
     return generateServerResponses("Internal Server Error.", 500);
   }
 }
@@ -127,7 +141,6 @@ export async function DELETE(request: Request) {
 
     const deleteUser = FetchUser.safeParse(res);
     if (!deleteUser.success) {
-      console.log(`Invalid User Request: ${deleteUser.error}`);
       return generateServerResponses("Invalid User Request.", 500);
     }
     const { db_url, db_name } = getDatabaseConfig();
@@ -140,18 +153,14 @@ export async function DELETE(request: Request) {
 
     const data = FetchUser.safeParse(deletedUser);
     if (!data.success) {
-      console.log(`User Error: ${data.error}`);
       return generateServerResponses("Invalid User Response.", 500);
     }
 
     return generateServerResponses(data.data, 200);
   } catch (error) {
-    console.log(`User Error: ${error}`);
-
     if (error instanceof AuthenticationError) {
       return generateServerResponses("Unauthorized User Operations.", 403);
     }
-
     return generateServerResponses("Internal Server Error.", 500);
   }
 }
