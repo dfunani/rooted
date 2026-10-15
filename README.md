@@ -1,36 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Rooted
 
-## Getting Started
+Rooted is a family-tree builder. Drag people onto a canvas, upload photos, connect relatives, and label relationships. Trees are saved to MongoDB (Atlas-ready).
 
-First, run the development server:
+## Stack
+
+- Next.js 15 (App Router) + React 19
+- MongoDB (native driver + GridFS for images)
+- Optional Amazon S3 for media
+- NextAuth (credentials) with bcrypt password hashing
+- React Flow (`@xyflow/react`) for the drag-and-drop canvas
+
+## Features
+
+- Drag-and-drop people from a palette onto the tree
+- Connect relatives and choose relationship labels (parent, child, spouse, sibling, partner, related)
+- Photo upload compressed to WebP and stored in GridFS (or S3 when configured)
+- Account drawer with profile, API keys, logout, and tree delete
+- Modern heritage-inspired UI (forest / mist palette)
+
+## Setup
 
 ```bash
+cp example.env .env
+# fill DB_URL, DB_NAME, NEXTAUTH_SECRET, NEXTAUTH_URL, CRYPTO_KEY, JWT_SECRET
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `DB_URL` | yes | MongoDB Atlas connection string |
+| `DB_NAME` | yes | e.g. `rooted` |
+| `NEXTAUTH_SECRET` | yes | `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | yes | App URL |
+| `CRYPTO_KEY` | yes | `openssl rand -hex 32` (64 hex chars) |
+| `JWT_SECRET` | yes | Signing secret for API JWTs |
+| `S3_*` | no | If set, media uses S3 instead of GridFS |
 
-## Learn More
+## Deploy
 
-To learn more about Next.js, take a look at the following resources:
+Works on any Node host (Vercel, Railway, Fly, etc.):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Set the env vars above (Atlas `DB_URL` / `DB_NAME`).
+2. `npm run build && npm start` (or connect the GitHub repo to your host).
+3. Point `NEXTAUTH_URL` at your production URL.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Media defaults to MongoDB GridFS — no extra storage service required for a first deploy.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `npm run dev` — local development
+- `npm run build` — production build
+- `npm start` — serve production build
+- `npm run lint` — ESLint

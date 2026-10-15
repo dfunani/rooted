@@ -6,7 +6,13 @@ const passwordRegex =
 const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
 const systemDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const objectIDRegex = /^[0-9a-fA-F]{24}$/;
-const imageRegex = /^data:image(:|\/)(png|jpg|jpeg);base64,/;
+const imageValue = z.union([
+  z.string().url(),
+  z.string().startsWith("/"),
+  z.string().regex(/^data:image\/(png|jpg|jpeg|webp);base64,/),
+  z.literal(""),
+  z.null(),
+]);
 
 export const LoginUser = z.object({
   id: z.string().regex(objectIDRegex),
@@ -41,7 +47,7 @@ export const UserProfile = z.object({
   dob: z.string().regex(dobRegex, "Invalid Date Of Birth."),
   city: z.string().min(1, "Invalid City.").max(255),
   country: z.string().min(1, "Invalid Country").max(255),
-  image: z.string().regex(imageRegex).nullable(),
+  image: imageValue,
 });
 
 export const FetchUser = z.object({
@@ -56,7 +62,7 @@ export const RegisterUser = z.object({
   dob: z.string().regex(dobRegex, "Invalid Date Of Birth."),
   city: z.string().min(1, "Invalid City.").max(255),
   country: z.string().min(1, "Invalid Country").max(255),
-  image: z.string().regex(imageRegex).nullable(),
+  image: imageValue,
 });
 
 export const PatchDetails = z.object({
@@ -66,14 +72,13 @@ export const PatchDetails = z.object({
   dob: z.string().regex(dobRegex, "Invalid Date Of Birth."),
   city: z.string().min(1, "Invalid City.").max(255),
   country: z.string().min(1, "Invalid Country").max(255),
-  image: z.string().regex(imageRegex).nullable(),
+  image: imageValue,
 });
 
 export const JWTPayload = z.object({
   sub: z.string(),
   user_id: z.string().regex(objectIDRegex),
   email: z.string().email().regex(emailRegex, "Invalid Email."),
-  password: z.string().regex(passwordRegex, "Invalid Password."),
   iat: z.number(),
   exp: z.number(),
 });

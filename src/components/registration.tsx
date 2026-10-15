@@ -1,60 +1,83 @@
-import { ChangeEvent } from "react";
+"use client";
+
+import { ChangeEvent, useState } from "react";
 
 import styles from "@/src/public/styles/auth.module.css";
 import AddButton from "@/src/components/add-button";
 import { RegistrationType } from "@/src/public/types/user";
-import { handleImageConversion } from "@/src/public/utils/converters";
+import { uploadImageFile } from "@/src/public/utils/upload";
 
 type Props = {
   registration: Omit<RegistrationType, "email" | "password">;
-  handleUpdateRegistration: (key: string, value: any) => void;
+  handleUpdateRegistration: (key: string, value: string) => void;
   handleRegistration: () => void;
+  submitLabel?: string;
 };
 
 export default function Registration(props: Props) {
+  const [uploading, setUploading] = useState(false);
+
   async function handleUpdateImage(file: File) {
-    const image = await handleImageConversion(file);
-    props.handleUpdateRegistration(
-      "image",
-      `data:${file.type};base64,${image}`
-    );
+    setUploading(true);
+    try {
+      // Prefer media API when signed in; during registration fall back to data URL
+      // (server stores it in GridFS/S3 on createUser / updateUser).
+      const url = await uploadImageFile(file);
+      if (url) {
+        props.handleUpdateRegistration("image", url);
+        return;
+      }
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      props.handleUpdateRegistration("image", dataUrl);
+    } finally {
+      setUploading(false);
+    }
   }
+
   return (
-    <div className={styles["form"]}>
+    <div className={styles.form}>
       <div className={styles.profile}>
         <input
-          className={styles["file"]}
+          className={styles.file}
           type="file"
           name="Picture"
           id="picture"
           accept="image/*"
-          required
           onChange={async (event: ChangeEvent) => {
-            let response = event.target as HTMLInputElement;
-            if (!response) return;
-
-            let files = response.files;
-            if (!files) return;
-
-            handleUpdateImage(files[0]);
+            const response = event.target as HTMLInputElement;
+            const files = response.files;
+            if (!files?.[0]) return;
+            await handleUpdateImage(files[0]);
           }}
         />
         <div className={styles["file-button"]}>
           {!props.registration.image && <AddButton />}
           {props.registration.image && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={props.registration.image as string}
-              alt={"Profile-Picture"}
+              alt="Profile"
               className={styles["file-image"]}
             />
           )}
         </div>
       </div>
+      {uploading && (
+        <p className={styles.subtitle} style={{ textAlign: "center" }}>
+          Uploading photo…
+        </p>
+      )}
       <input
         className={styles.input}
         aria-label="Name"
-        type="name"
-        placeholder="Name"
+        type="text"
+        placeholder="First name"
         required
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
@@ -81,7 +104,6 @@ export default function Registration(props: Props) {
         aria-label="Date of Birth"
         type="date"
         required
-        placeholder="Date of Birth"
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
             "dob",
@@ -121,7 +143,7 @@ export default function Registration(props: Props) {
           onClick={() => props.handleRegistration()}
           type="button"
         >
-          Submit
+          {props.submitLabel ?? "Create my tree"}
         </button>
       </div>
     </div>

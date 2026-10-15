@@ -1,320 +1,420 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   MiniMap,
   Controls,
   Background,
-  useNodesState,
-  useEdgesState,
   applyNodeChanges,
   applyEdgeChanges,
-  addEdge,
   BackgroundVariant,
   Panel,
   Connection,
   NodeChange,
-  OnNodesChange,
   EdgeChange,
+  ReactFlowInstance,
+  MarkerType,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
 import { v4 as uuid4 } from "uuid";
 
 import styles from "@/src/components/canvas.module.css";
-import MenuButton from "@/src/components/menu-button";
-import MenuDropdown from "@/src/components/menu-dropdown";
 import MenuItem from "@/src/components/menu-item";
 import { buildDate, generateImages } from "@/src/public/utils/factories";
-import { EdgeType, NodeType, PositionType } from "@/src/public/types/editor";
-import { StateReducerType } from "../public/types/states";
-import { StaticImageData } from "next/image";
+import {
+  EdgeType,
+  NodeType,
+  RELATIONSHIP_LABELS,
+  RelationshipType,
+} from "@/src/public/types/editor";
+import { StateReducerType } from "@/src/public/types/states";
 import CanvasItem from "@/src/components/canvas-item";
-import SaveButton from "@/src/components/save-button";
-import EditButton from "@/src/components/edit-button";
+import RelationshipEdge from "@/src/components/relationship-edge";
+import ProfilePanel from "@/src/components/profile-panel";
 import { useSession } from "next-auth/react";
-import LogoutButton from "./logout-button";
-import DeleteButton from "./delete-button";
-import Error from "next/error";
-import ProfilePicture from "./profile-picture";
 import { useDispatch, useSelector } from "react-redux";
 import { UPDATE as userUpdate } from "@/lib/reducers/user";
 import { UPDATE as profileUpdate } from "@/lib/reducers/profile";
-import { UPDATE as editorUpdate } from "@/lib/reducers/editor";
-import ProfileMenu from "@/src/components/profile-menu";
-import ProfileMenuItem from "./profile-menu-item";
+import { UPDATE as editorUpdate, CLEAR as editorClear } from "@/lib/reducers/editor";
 
-const NodeComponents = {
-  "Canvas-Item": CanvasItem,
-};
-type ResolveType = {
-  text: string;
-  status: "error" | "success";
-};
+const nodeTypes = { "Canvas-Item": CanvasItem };
+const edgeTypes = { relationship: RelationshipEdge };
+
+type Toast = { text: string; status: "error" | "success" };
+
+type PendingConnection = Connection & { id?: string };
 
 export default function Canvas() {
-  const { data: session } = useSession();
-
+  const { data: session, status } = useSession();
   const dispatch = useDispatch();
   const userState = useSelector((state: StateReducerType) => state.user);
   const editorState = useSelector((state: StateReducerType) => state.editor);
-  const profileState = useSelector((state: StateReducerType) => state.profile);
 
-  const [show, setShow] = useState(false);
-  const [menu, setMenu] = useState(false);
-  const [resolve, setReolve] = useState<ResolveType | null>(null);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [paletteOpen, setPaletteOpen] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [pendingConnection, setPendingConnection] =
+    useState<PendingConnection | null>(null);
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+  const reactFlowRef = useRef<ReactFlowInstance<NodeType, EdgeType> | null>(
+    null
+  );
+  const bootstrapped = useRef(false);
 
-  const onConnect = useCallback(
-    (params: Connection) => {
-      const new_edge = addEdge(params, editorState.edges ?? []);
-      dispatch(
-        editorUpdate({
-          edges: new_edge,
-          nodes: editorState.nodes ?? [],
-        })
-      );
-    },
-    [dispatch, editorState.edges, editorState.nodes]
+  // React Flow mutates measured width/height on node objects. Redux/Immer
+  // freezes state, so pass plain clones into the canvas.
+  const nodes = useMemo(
+    () =>
+      (editorState.nodes ?? []).map((node) => ({
+        ...node,
+        position: { ...node.position },
+        data: { ...node.data },
+      })),
+    [editorState.nodes]
+  );
+  const edges = useMemo(
+    () =>
+      (editorState.edges ?? []).map((edge) => ({
+        ...edge,
+        data: edge.data ? { ...edge.data } : undefined,
+      })),
+    [editorState.edges]
   );
 
   const onNodesChange = useCallback(
-    (changes: NodeChange<NodeType>[]) =>
+    (changes: NodeChange<NodeType>[]) => {
       dispatch(
         editorUpdate({
-          nodes: applyNodeChanges(changes, editorState.nodes ?? []),
-          edges: editorState.edges ?? [],
+          nodes: applyNodeChanges(changes, nodes),
+          edges,
         })
-      ),
-    [dispatch, editorState.nodes, editorState.edges]
+      );
+    },
+    [dispatch, nodes, edges]
   );
 
   const onEdgesChange = useCallback(
-    (changes: EdgeChange<EdgeType>[]) =>
+    (changes: EdgeChange<EdgeType>[]) => {
       dispatch(
         editorUpdate({
-          edges: applyEdgeChanges(changes, editorState.edges ?? []),
-          nodes: editorState.nodes ?? [],
+          edges: applyEdgeChanges(changes, edges),
+          nodes,
         })
-      ),
-    [dispatch, editorState.nodes, editorState.edges]
+      );
+    },
+    [dispatch, nodes, edges]
   );
 
-  if (!session || !session.user) {
-    return <Error statusCode={403} />;
+  const onConnect = useCallback((params: Connection) => {
+    setPendingConnection(params);
+    setEditingEdgeId(null);
+  }, []);
+
+  function confirmRelationship(relationship: RelationshipType) {
+    if (editingEdgeId) {
+      const next = edges.map((edge) =>
+        edge.id === editingEdgeId
+          ? {
+              ...edge,
+              label: RELATIONSHIP_LABELS[relationship],
+              data: { relationship },
+            }
+          : edge
+      );
+      dispatch(editorUpdate({ nodes, edges: next }));
+      setEditingEdgeId(null);
+      return;
+    }
+
+    if (!pendingConnection?.source || !pendingConnection?.target) return;
+
+    const edge: EdgeType = {
+      id: uuid4(),
+      source: pendingConnection.source,
+      target: pendingConnection.target,
+      sourceHandle: pendingConnection.sourceHandle,
+      targetHandle: pendingConnection.targetHandle,
+      type: "relationship",
+      label: RELATIONSHIP_LABELS[relationship],
+      data: { relationship },
+    };
+
+    dispatch(editorUpdate({ nodes, edges: [...edges, edge] }));
+    setPendingConnection(null);
   }
 
-  function toggleMenu() {
-    setShow((prev: boolean) => !prev);
-  }
-  function toggleProfile() {
-    setMenu((prev: boolean) => !prev);
-  }
-
-  function addNode(
-    position: PositionType,
-    src: StaticImageData | string | null
-  ) {
-    const id = uuid4().toString();
+  function addNodeAt(position: { x: number; y: number }, src: string) {
+    const id = uuid4();
     const node: NodeType = {
-      id: id,
-      position: position,
+      id,
+      position,
       type: "Canvas-Item",
       data: {
-        name: "John",
-        surname: "Doe",
-        city: "Cape Town",
-        country: "South Africa",
+        name: "New",
+        surname: "Relative",
+        city: "Hometown",
+        country: "Country",
         dob: buildDate(new Date()),
         image: src,
         label: `Canvas-Node-${id}`,
       },
     };
-    dispatch(
-      editorUpdate({
-        nodes: [...(editorState.nodes ?? []), node],
-        edges: [...(editorState.edges ?? [])],
-      })
-    );
+    dispatch(editorUpdate({ nodes: [...nodes, node], edges }));
+  }
+
+  function onDragOver(event: React.DragEvent) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  function onDrop(event: React.DragEvent) {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData("application/rooted-avatar");
+    if (!raw || !reactFlowRef.current) return;
+
+    try {
+      const { src } = JSON.parse(raw) as { src: string };
+      const position = reactFlowRef.current.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      addNodeAt(position, src);
+    } catch {
+      setToast({ text: "Couldn't add person. Try again.", status: "error" });
+    }
   }
 
   async function saveNodes() {
-    console.log(editorState.edges?.length);
     try {
       const response = await fetch("/api/editor", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           user_id: userState.id,
-          nodes: editorState.nodes,
-          edges: editorState.edges,
+          nodes,
+          edges,
         }),
       });
 
-      if (response.ok) {
-        setReolve({
-          text: "Nodes/Edges Saved Successfully",
-          status: "success",
-        });
-      } else {
-        setReolve({
-          text: "Couldn't Save Editor. Try Again Later.",
-          status: "error",
-        });
-      }
-    } catch (error) {
-      setReolve({
-        text: "Couldn't Save Editor. Try Again Later.",
-        status: "error",
-      });
+      setToast(
+        response.ok
+          ? { text: "Family tree saved.", status: "success" }
+          : { text: "Couldn't save. Try again later.", status: "error" }
+      );
+    } catch {
+      setToast({ text: "Couldn't save. Try again later.", status: "error" });
     }
   }
 
-  async function deleteEditor(user_id: string | null) {
+  async function deleteEditor() {
+    if (!userState.id) return;
+    if (!window.confirm("Delete your entire family tree? This cannot be undone.")) {
+      return;
+    }
     try {
       const response = await fetch("/api/editor", {
         method: "DELETE",
-        body: JSON.stringify({
-          user_id: user_id,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userState.id }),
       });
-
       if (response.ok) {
-        setReolve({
-          text: "Nodes/Edges Saved Successfully",
-          status: "success",
-        });
+        dispatch(editorClear());
+        dispatch(editorUpdate({ nodes: [], edges: [] }));
+        setToast({ text: "Family tree deleted.", status: "success" });
+        setMenuOpen(false);
       } else {
-        setReolve({
-          text: "Couldn't Delete Editor. Try Again Later.",
+        setToast({ text: "Couldn't delete tree.", status: "error" });
+      }
+    } catch {
+      setToast({ text: "Couldn't delete tree.", status: "error" });
+    }
+  }
+
+  const paletteItems = useMemo(() => {
+    const images = generateImages();
+    return Object.entries(images).map(([label, src]) => (
+      <MenuItem key={label} src={src} label={label} />
+    ));
+  }, []);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user?.id || bootstrapped.current) {
+      return;
+    }
+    bootstrapped.current = true;
+
+    dispatch(
+      userUpdate({
+        id: session.user.id,
+        email: session.user.email ?? null,
+        isNewUser: Boolean(session.user.isNewUser),
+      })
+    );
+
+    async function load() {
+      const id = session!.user!.id!;
+      const [profileRes, editorRes] = await Promise.all([
+        fetch(`/api/auth/user?id=${id}`),
+        fetch(`/api/editor?id=${id}`),
+      ]);
+
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        dispatch(profileUpdate(profile.message));
+      } else {
+        setToast({
+          text: "Profile failed to load.",
           status: "error",
         });
       }
-    } catch (error) {
-      setReolve({
-        text: "Couldn't Delete Editor. Try Again Later.",
-        status: "error",
-      });
+
+      if (editorRes.ok) {
+        const data = await editorRes.json();
+        dispatch(
+          editorUpdate({
+            nodes: data.message.nodes ?? [],
+            edges: data.message.edges ?? [],
+          })
+        );
+      } else {
+        dispatch(editorUpdate({ nodes: [], edges: [] }));
+      }
     }
+
+    load();
+  }, [dispatch, session, status]);
+
+  if (status === "loading") {
+    return <div className="main">Loading Rooted…</div>;
   }
 
-  function getMenuItems() {
-    const images = generateImages(theme);
-
-    const result = [];
-    for (const image in images) {
-      result.push(
-        <MenuItem
-          key={uuid4()}
-          src={images[image]}
-          label={image}
-          onDragItem={addNode}
-        />
-      );
-    }
-    return result;
+  if (!session?.user) {
+    return <div className="main">Please sign in to continue.</div>;
   }
-
-  async function setEditor(id: string) {
-    const response = await fetch(`/api/editor?id=${id}`, { method: "GET" });
-    const data = await response.json();
-    if (response.ok) {
-      dispatch(
-        editorUpdate({
-          nodes: data.message.nodes,
-          edges: data.message.edges,
-        })
-      );
-    } else {
-      dispatch(
-        editorUpdate({
-          nodes: [],
-          edges: [],
-        })
-      );
-    }
-  }
-
-  async function setProfile(id: string) {
-    const response = await fetch(`/api/auth/user?id=${id}`, { method: "GET" });
-    const profile = await response.json();
-    if (response.ok) {
-      dispatch(profileUpdate(profile.message));
-    } else {
-      setReolve({
-        text: "User Profile Failed to Load. Try Again Later.",
-        status: "error",
-      });
-    }
-  }
-
-  useEffect(() => {
-    if (session.user && session.user.id && session.user.email) {
-      dispatch(userUpdate(session.user));
-    }
-
-    if (Object.values(profileState).every((state: unknown) => state === null)) {
-      setProfile(session.user.id ?? userState.id);
-    }
-
-    if (Object.values(editorState).every((state: unknown) => state === null)) {
-      setEditor(session.user.id ?? userState.id);
-    }
-
-    const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (isDark) setTheme("dark");
-    else setTheme("light");
-  }, [dispatch, editorState, profileState, session.user, userState.id]);
 
   return (
     <div className={styles.canvas}>
-      {menu && (
-        <ProfileMenuItem id={userState.id ?? ""} handleClose={toggleProfile} />
+      <ProfilePanel
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onDeleteTree={deleteEditor}
+      />
+
+      {(pendingConnection || editingEdgeId) && (
+        <div className={styles.relationshipPicker}>
+          <div className={styles.relationshipCard}>
+            <h3>{editingEdgeId ? "Edit relationship" : "How are they related?"}</h3>
+            <p style={{ margin: 0, color: "var(--sage)" }}>
+              Choose a label for this connection.
+            </p>
+            <div className={styles.relationshipOptions}>
+              {(Object.keys(RELATIONSHIP_LABELS) as RelationshipType[]).map(
+                (key) => (
+                  <button key={key} type="button" onClick={() => confirmRelationship(key)}>
+                    {RELATIONSHIP_LABELS[key]}
+                  </button>
+                )
+              )}
+            </div>
+            <button
+              type="button"
+              className={styles.iconButton}
+              onClick={() => {
+                setPendingConnection(null);
+                setEditingEdgeId(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
-      {!menu && (
-        <ReactFlow
-          nodes={editorState.nodes ?? []}
-          edges={editorState.edges ?? []}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={NodeComponents}
-        >
-          <Controls className={styles.controls} />
-          <Panel>
-            <ProfilePicture
-              image={profileState?.image ?? ""}
-              name={profileState?.name ?? ""}
-              toggleMenu={toggleProfile}
-            />
-            {/* {showProfile && (
-            <MenuDropdown>
-              <EditButton/>
-              <LogoutButton />
-              <DeleteButton id={userState.id} delete={deleteEditor} />
-            </MenuDropdown>
-          )} */}
-            <MenuButton show={show} toggleMenu={toggleMenu} />
-            {show && <MenuDropdown>{getMenuItems()}</MenuDropdown>}
-            <SaveButton saveNodes={saveNodes} />
-            {resolve && (
-              <div className={`${styles["error"]} ${styles[resolve.status]}`}>
-                <span className={styles["error-text"]}>{resolve.text}</span>
-                <span
-                  className={styles["error-close"]}
-                  onClick={() => {
-                    setReolve(null);
-                  }}
-                >
-                  &times;
-                </span>
-              </div>
-            )}
-          </Panel>
-          <MiniMap className={styles.controls} />
-          <Background variant={BackgroundVariant.Dots} gap={15} size={2} />
-        </ReactFlow>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onInit={(instance) => {
+          reactFlowRef.current = instance;
+        }}
+        onEdgeClick={(_, edge) => {
+          setEditingEdgeId(edge.id);
+          setPendingConnection(null);
+        }}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        fitView
+        defaultEdgeOptions={{
+          type: "relationship",
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#1e3d32" },
+          style: { stroke: "#3d5c4e", strokeWidth: 2 },
+        }}
+      >
+        <Controls />
+        <MiniMap pannable zoomable />
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1.5} color="#5c7a6a55" />
+
+        <Panel position="top-left">
+          <div className={styles.toolbar}>
+            <span className={styles.brandChip}>Rooted</span>
+            <button
+              type="button"
+              className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
+              onClick={saveNodes}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className={styles.toolbarButton}
+              onClick={() => setPaletteOpen((v) => !v)}
+            >
+              {paletteOpen ? "Hide people" : "Add people"}
+            </button>
+            <button
+              type="button"
+              className={styles.toolbarButton}
+              onClick={() => setMenuOpen(true)}
+            >
+              Account
+            </button>
+          </div>
+          {paletteOpen && (
+            <div className={styles.palette}>
+              <h3 className={styles.paletteTitle}>Add a person</h3>
+              <p className={styles.paletteHint}>
+                Drag an avatar onto the canvas, then connect relatives and label the relationship.
+              </p>
+              <ul className={styles.paletteGrid}>{paletteItems}</ul>
+            </div>
+          )}
+        </Panel>
+
+        {nodes.length === 0 && (
+          <div className={styles.emptyState}>
+            <div className={styles.emptyCard}>
+              <h2>Plant your first root</h2>
+              <p>
+                Drag someone from the palette onto the canvas to begin your family tree.
+              </p>
+            </div>
+          </div>
+        )}
+      </ReactFlow>
+
+      {toast && (
+        <div className={`${styles.toast} ${styles[toast.status]}`}>
+          <span>{toast.text}</span>
+          <span className={styles["error-close"]} onClick={() => setToast(null)}>
+            ×
+          </span>
+        </div>
       )}
     </div>
   );

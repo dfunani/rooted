@@ -42,7 +42,7 @@ export type JWTPayloadType = {
   sub: string;
   user_id: string;
   email: string;
-  password: string;
+  password?: string;
   iat: number;
   exp: number;
 };

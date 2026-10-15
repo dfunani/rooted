@@ -9,9 +9,9 @@ import {
 } from "@/src/public/utils/factories";
 
 /** Retrieves Login Details. */
-export async function POST(request: Request, response: Response) {
+export async function POST(request: Request) {
   try {
-    await new AuthService(request, response).validateAuthMethod();
+    await new AuthService(request).validateAuthMethod();
     const res = await request.json();
 
     const credentials = Credentials.safeParse(res);

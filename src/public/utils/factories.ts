@@ -1,31 +1,18 @@
-import female_dark_1 from "@/src/public/images/menu-items/female-dark-1.png";
-import female_dark_2 from "@/src/public/images/menu-items/female-dark-2.png";
-import female_light_1 from "@/src/public/images/menu-items/female-light-1.png";
-import female_light_2 from "@/src/public/images/menu-items/female-light-2.png";
-import male_dark_1 from "@/src/public/images/menu-items/male-dark-1.png";
-import male_dark_2 from "@/src/public/images/menu-items/male-dark-2.png";
-import male_light_1 from "@/src/public/images/menu-items/male-light-1.png";
-import male_light_2 from "@/src/public/images/menu-items/male-light-2.png";
 import { ConfigurationError } from "@/src/public/errors/config";
-import { ImageFactoryResponse, ThemeOptions } from "../types/images";
-import { StatusCodes } from "../types/responses";
+import { ImageFactoryResponse } from "@/src/public/types/images";
+import { StatusCodes } from "@/src/public/types/responses";
 
-export function generateImages(theme: ThemeOptions): ImageFactoryResponse {
-  const response = {
-    light: {
-      "female-light-1": female_light_1,
-      "female-light-2": female_light_2,
-      "male-light-1": male_light_1,
-      "male-light-2": male_light_2,
-    },
-    dark: {
-      "female-dark-1": female_dark_1,
-      "female-dark-2": female_dark_2,
-      "male-dark-1": male_dark_1,
-      "male-dark-2": male_dark_2,
-    },
-  };
-  return response[theme];
+const AVATARS = {
+  "person-1": "/avatars/person-1.svg",
+  "person-2": "/avatars/person-2.svg",
+  "person-3": "/avatars/person-3.svg",
+  "person-4": "/avatars/person-4.svg",
+  "person-5": "/avatars/person-5.svg",
+  "person-6": "/avatars/person-6.svg",
+} as const;
+
+export function generateImages(): ImageFactoryResponse {
+  return { ...AVATARS };
 }
 
 export function buildDate(date: Date): string {
@@ -82,9 +69,7 @@ export function getIdFromRequest(request: Request, param: string = "id") {
   try {
     const url = new URL(request.url);
     const id = url.searchParams.get(param);
-
     if (!id) return null;
-
     return id;
   } catch {
     return null;

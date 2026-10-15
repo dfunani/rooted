@@ -1,34 +1,36 @@
-import Image, { StaticImageData } from "next/image";
+"use client";
+
+import Image from "next/image";
 import { DragEvent } from "react";
 
-import styles from "@/src/components/dropdown.module.css";
-import { handleImageConversion } from "@/src/public/utils/converters";
+import styles from "@/src/components/canvas.module.css";
 
 type Props = {
-  src: StaticImageData | string;
+  src: string;
   label: string;
-  onDragItem: (position: Position, src: Props["src"] | null) => void;
 };
+
 export default function MenuItem(props: Props) {
-  async function handleUpdateImage(image: StaticImageData) {
-    const response = await fetch(image.src);
-    const blob = await response.blob();
-    const base64String = await handleImageConversion(blob);
-    if (response) return `data:image:png;base64,${base64String}`;
-    return null
+  function onDragStart(event: DragEvent) {
+    event.dataTransfer.setData(
+      "application/rooted-avatar",
+      JSON.stringify({ src: props.src, label: props.label })
+    );
+    event.dataTransfer.effectAllowed = "move";
   }
+
   return (
-    <li
-      onDragEndCapture={async (event: DragEvent) =>
-        props.onDragItem(
-          { x: event.clientX, y: event.clientY },
-          await handleUpdateImage(props.src as StaticImageData)
-        )
-      }
-    >
-      <div className={styles["card-item"]}>
-        <Image src={props.src} alt={props.label} />
-      </div>
+    <li>
+      <button
+        type="button"
+        className={styles.paletteItem}
+        draggable
+        onDragStart={onDragStart}
+        aria-label={`Add ${props.label}`}
+        title="Drag onto the canvas"
+      >
+        <Image src={props.src} alt={props.label} width={96} height={96} />
+      </button>
     </li>
   );
 }

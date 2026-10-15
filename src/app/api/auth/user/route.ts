@@ -15,12 +15,12 @@ import { AuthenticationError } from "@/src/public/errors/auth";
 import { AuthService } from "@/src/public/models/auth";
 
 /** Get User profile. */
-export async function GET(request: Request, response: Response) {
+export async function GET(request: Request) {
   const id = getIdFromRequest(request);
   if (!id) return generateServerResponses("Invalid User Request.", 400);
 
   try {
-    await new AuthService(request, response).validateAuthMethod();;
+    await new AuthService(request).validateAuthMethod();
     const { db_url, db_name } = getDatabaseConfig();
     const user = new User(db_url, db_name);
 
@@ -45,10 +45,9 @@ export async function GET(request: Request, response: Response) {
   }
 }
 
-/** Create/Register a New User. */
-export async function POST(request: Request, response: Response) {
+/** Create/Register a New User (public). */
+export async function POST(request: Request) {
   try {
-    await new AuthService(request, response).validateAuthMethod();;
     const res = await request.json();
 
     const registration = RegisterUser.safeParse(res);
@@ -74,19 +73,14 @@ export async function POST(request: Request, response: Response) {
     return generateServerResponses(data.data, 201);
   } catch (error) {
     console.log(`User Error: ${error}`);
-
-    if (error instanceof AuthenticationError) {
-      return generateServerResponses("Unauthorized User Operations.", 403);
-    }
-
     return generateServerResponses("Internal Server Error.", 500);
   }
 }
 
 /** Update User profiles. */
-export async function PATCH(request: Request, response: Response) {
+export async function PATCH(request: Request) {
   try {
-    await new AuthService(request, response).validateAuthMethod();;
+    await new AuthService(request).validateAuthMethod();
     const res = await request.json();
 
     const patchDetails = PatchDetails.safeParse(res);
@@ -126,9 +120,9 @@ export async function PATCH(request: Request, response: Response) {
 }
 
 /** Delete Existing User. */
-export async function DELETE(request: Request, response: Response) {
+export async function DELETE(request: Request) {
   try {
-    await new AuthService(request, response).validateAuthMethod();;
+    await new AuthService(request).validateAuthMethod();
     const res = await request.json();
 
     const deleteUser = FetchUser.safeParse(res);

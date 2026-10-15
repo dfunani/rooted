@@ -1,30 +1,100 @@
 :root {
-  --background: #f0f0f0;
-  --foreground: #ddd;
-  --content: #333;
-  --error-foreground: rgb(255, 255, 255);
-  --error-background: rgb(253, 60, 60);
-  --success-background: rgb(60, 200, 60);
+  --ink: #14221c;
+  --forest: #1e3d32;
+  --moss: #3d5c4e;
+  --sage: #5c7a6a;
+  --leaf: #8b9e7e;
+  --mist: #eef2ed;
+  --panel: #f7faf7;
+  --line: rgba(30, 61, 50, 0.14);
+  --shadow: 0 18px 40px rgba(20, 34, 28, 0.12);
+  --background: var(--mist);
+  --foreground: var(--moss);
+  --content: var(--ink);
+  --accent: var(--forest);
+  --accent-soft: rgba(30, 61, 50, 0.08);
+  --error-foreground: #fff8f8;
+  --error-background: #b33a3a;
+  --success-background: #2f6b4f;
+  --radius: 18px;
+  --font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-body: "Source Sans 3", "Segoe UI", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #333;
-    --foreground: #555;
-    --content: #fff;
+    --ink: #eef2ed;
+    --forest: #8b9e7e;
+    --moss: #5c7a6a;
+    --sage: #3d5c4e;
+    --leaf: #a8b87a;
+    --mist: #101816;
+    --panel: #17241e;
+    --line: rgba(238, 242, 237, 0.12);
+    --shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+    --background: var(--mist);
+    --foreground: #243b32;
+    --content: var(--ink);
+    --accent: var(--leaf);
+    --accent-soft: rgba(168, 184, 122, 0.12);
   }
-}
 
-@media (prefers-color-scheme: dark) {
   html {
     color-scheme: dark;
   }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: var(--font-body);
+  color: var(--content);
+  background:
+    radial-gradient(circle at top left, rgba(139, 158, 126, 0.22), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(30, 61, 50, 0.12), transparent 40%),
+    var(--background);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 .main {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
+  min-height: 100vh;
   width: 100vw;
+}
+
+.brand-mark {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.react-flow__controls-button {
+  background: var(--panel) !important;
+  border-bottom-color: var(--line) !important;
+  fill: var(--content) !important;
+}
+
+.react-flow__minimap {
+  background: var(--panel) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  border: 1px solid var(--line);
 }

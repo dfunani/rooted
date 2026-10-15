@@ -1,19 +1,37 @@
 .modal-container {
-    position: fixed;
-    display: flex;
-    justify-content: center;
-    width: 20vw;
-    padding: 5px;
-    align-items: center;
-    background-color: var(--foreground);
-
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 34, 28, 0.4);
+  padding: 1rem;
 }
 
+.card {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+  position: relative;
+}
+
+.title {
+  font-family: var(--font-display);
+  margin: 0 0 1rem;
+  letter-spacing: -0.03em;
+}
 
 .close-button {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    cursor: pointer;
-    font-size: 20px;
+  position: absolute;
+  top: 0.85rem;
+  right: 0.95rem;
+  font-size: 1.6rem;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--content);
+  line-height: 1;
 }

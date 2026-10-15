@@ -48,17 +48,27 @@ export default function Page() {
   }, [resolve, router]);
 
   return (
-    <div className={styles["login-container"]}>
-      <h2 className={styles.h2}>Login</h2>
-      <Login
-        credentials={{
-          email: credentials.email,
-          password: credentials.password,
-        }}
-        handleUpdateCredentials={handleUpdateCredentials}
-        handleLogin={handleLogin}
-      />
-      {resolveText && <p className={styles.error}>{resolveText}</p>}
+    <div className={styles.shell}>
+      <section className={styles.hero}>
+        <p className={styles.eyebrow}>Family trees, grown gently</p>
+        <h1 className={styles.heroBrand}>Rooted</h1>
+        <p className={styles.heroCopy}>
+          Map the people who made you — photos, places, and the ties between them.
+        </p>
+      </section>
+      <div className={styles["login-container"]}>
+        <p className={styles.eyebrow}>Welcome back</p>
+        <h2 className={styles.h2}>Sign in</h2>
+        <p className={styles.subtitle}>
+          Continue building and sharing your family tree.
+        </p>
+        <Login
+          credentials={credentials}
+          handleUpdateCredentials={handleUpdateCredentials}
+          handleLogin={handleLogin}
+        />
+        {resolveText && <p className={styles.error}>{resolveText}</p>}
+      </div>
     </div>
   );
 }

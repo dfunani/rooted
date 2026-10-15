@@ -11,20 +11,21 @@ type Props = {
   handleUpdateCredentials: (key: string, value: string) => void;
   handleLogin: () => void;
 };
+
 export default function Login(props: Props) {
   const router = useRouter();
   const { access } = useParams();
   const param = access?.toString() ?? "";
 
   return (
-    <div className={styles["form"]}>
+    <div className={styles.form}>
       <input
         className={styles.input}
         aria-label="Email"
-        autoSave="off"
-        autoComplete="off"
+        autoComplete="email"
         type="email"
         placeholder="Email"
+        value={props.credentials.email}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateCredentials(
             "email",
@@ -36,9 +37,9 @@ export default function Login(props: Props) {
         className={styles.input}
         aria-label="Password"
         type="password"
-        autoSave="off"
-        autoComplete="off"
+        autoComplete={param === "login" ? "current-password" : "new-password"}
         placeholder="Password"
+        value={props.credentials.password}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateCredentials(
             "password",
@@ -52,22 +53,24 @@ export default function Login(props: Props) {
           onClick={() => props.handleLogin()}
           type="button"
         >
-          {param === "login" ? "Login" : "Submit"}
+          {param === "login" ? "Sign in" : "Continue"}
         </button>
         {param === "login" && (
           <button
-            className={styles.button}
+            className={`${styles.button} ${styles.buttonSecondary}`}
             onClick={() => router.push("/auth/user/register")}
+            type="button"
           >
-            Register
+            Create account
           </button>
         )}
         {param === "register" && (
           <button
-            className={styles.button}
+            className={`${styles.button} ${styles.buttonSecondary}`}
             onClick={() => router.push("/auth/user/login")}
+            type="button"
           >
-            Login
+            Sign in
           </button>
         )}
       </div>

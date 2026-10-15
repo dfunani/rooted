@@ -1,31 +1,19 @@
-// app/not-found.js
 import styles from "@/src/app/not-found.module.css";
-
 import Link from "next/link";
-import Image from "next/image";
-
-import not_found_image from "@/src/public/images/not-found.jpg";
 
 export default function NotFound() {
   return (
     <div className={styles.container}>
       <div className={styles.content}>
-        <h1 className={styles.title}>404 - Page Not Found</h1>
+        <p className={styles.eyebrow}>Rooted</p>
+        <h1 className={styles.title}>This path doesn’t grow here</h1>
         <p className={styles.message}>
-          Oops! It looks like you&apos;ve wandered off the path.
+          The page you’re looking for isn’t on the tree. Head home and keep mapping your roots.
         </p>
-        <Image
-          src={not_found_image}
-          alt="Lost in the Woods"
-          className={styles.image}
-          width={600}
-          height={300}
-        />
         <div className={styles.navigation}>
-          <Link href="/">
-            <div className={styles.link}>Go back home</div>
+          <Link href="/" className={styles.link}>
+            Back to Rooted
           </Link>
-          {/* Add more navigation links as needed */}
         </div>
       </div>
     </div>

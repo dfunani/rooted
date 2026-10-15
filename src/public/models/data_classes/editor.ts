@@ -2,13 +2,29 @@ import { z } from "zod";
 
 const objectIDRegex = /^[0-9a-fA-F]{24}$/;
 
+const relationship = z.enum([
+  "parent",
+  "child",
+  "spouse",
+  "sibling",
+  "partner",
+  "related",
+]);
+
+const imageValue = z.union([
+  z.string().url(),
+  z.string().startsWith("/"),
+  z.string().regex(/^data:image\/(png|jpg|jpeg|webp);base64,/),
+  z.literal(""),
+]);
+
 const nodeData = z.object({
   name: z.string().min(1, "Invalid Name."),
   surname: z.string().min(1, "Invalid Surname."),
-  dob: z.string().regex(/\w{3}, \d{1,2} \w{3} \d{4}/, "Invalid Date Of Birth."),
+  dob: z.string().min(1, "Invalid Date Of Birth."),
   city: z.string().min(1, "Invalid City."),
   country: z.string().min(1, "Invalid Country"),
-  image: z.string(),
+  image: imageValue.nullable(),
   label: z.string(),
 });
 
@@ -27,9 +43,16 @@ const FetchNode = z.object({
 export const FetchEdge = z.object({
   id: z.string(),
   source: z.string(),
-  sourceHandle: z.string(),
+  sourceHandle: z.string().nullable().optional(),
   target: z.string(),
-  targetHandle: z.string(),
+  targetHandle: z.string().nullable().optional(),
+  type: z.string().optional(),
+  label: z.string().optional(),
+  data: z
+    .object({
+      relationship: relationship,
+    })
+    .optional(),
 });
 
 export const FetchEditor = z.object({

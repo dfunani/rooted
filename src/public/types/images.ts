@@ -1,7 +1,5 @@
-import { StaticImageData } from "next/image";
-
 export type ImageFactoryResponse = {
-  [key: string]: StaticImageData;
+  [key: string]: string;
 };
 
 export type ThemeOptions = "light" | "dark";

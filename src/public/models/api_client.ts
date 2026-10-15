@@ -29,33 +29,35 @@ export class APIClient extends Model {
       })
     );
 
-    const payload = {
-      user_id: user_id,
-      apiKey: apiKey,
-      active: active,
+    const doc = {
+      user_id,
+      apiKey,
+      active,
       createdAt: now,
-      expiresAt: expiresAt,
+      expiresAt,
     };
-    const response = await collection.insertOne({ ...payload });
-
+    const response = await collection.insertOne({ ...doc });
     if (!response) return null;
 
-    return payload;
+    return {
+      user_id,
+      apiKey,
+      active,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+    };
   }
 
-  async createJWT(
-    credentials: Pick<JWTPayloadType, "user_id" | "email" | "password">
-  ) {
+  async createJWT(credentials: Pick<JWTPayloadType, "user_id" | "email">) {
     const now = new Date();
     const expires = 30 * 60;
     const exp = now.getTime() + expires * 1000;
     const expiresAt = new Date(exp);
 
     const payload = {
-      sub: this.db_name,
+      sub: process.env.DB_NAME ?? this.db_name,
       user_id: credentials.user_id,
       email: credentials.email,
-      password: credentials.password,
       iat: now.getTime(),
       exp: exp,
     };
@@ -91,10 +93,12 @@ export class APIClient extends Model {
   }
 
   async validateJWT(token: string) {
-    const bearer = token?.split(" ")[1];
+    const bearer = token?.startsWith("Bearer ")
+      ? token.split(" ")[1]
+      : token;
     const verify = jwt.verify(bearer, this.secret) as JWTPayloadType;
     const now = new Date().getTime();
-    const user = new User(this.db_uri, "users");
+    const user = new User(this.db_uri, this.db_name);
 
     if (
       !verify ||
@@ -109,14 +113,7 @@ export class APIClient extends Model {
       throw new AuthenticationError("Invalid User Token. Invalid Payload.");
     }
 
-    const resultUser = user.getUser({
-      email: validToken.data.email,
-      password: validToken.data.password,
-    });
-    if (!resultUser)
-      throw new AuthenticationError("Invalid User Token. Invalid User.");
-
-    const resultProfile = user.getProfile(validToken.data.user_id);
+    const resultProfile = await user.getProfile(validToken.data.user_id);
     if (!resultProfile)
       throw new AuthenticationError("Invalid User Token. Invalid Profile.");
   }
@@ -158,13 +155,21 @@ export class APIClient extends Model {
       .toArray();
     if (!response) return null;
 
-    return response.map((data: WithId<any>) => {
+    return response.map((data: WithId<Record<string, unknown>>) => {
+      const createdAt =
+        data.createdAt instanceof Date
+          ? data.createdAt.toISOString()
+          : String(data.createdAt ?? "");
+      const expiresAt =
+        data.expiresAt instanceof Date
+          ? data.expiresAt.toISOString()
+          : String(data.expiresAt ?? "");
       return {
         user_id: data.user_id,
         apiKey: data.apiKey,
         active: data.active,
-        createdAt: data.createdAt,
-        expiresAt: data.expiresAt,
+        createdAt,
+        expiresAt,
       };
     });
   }

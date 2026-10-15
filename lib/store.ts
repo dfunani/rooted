@@ -1,6 +1,6 @@
 import { persistStore, persistReducer } from "redux-persist";
 import storage from "redux-persist/lib/storage";
-import { combineReducers } from "redux"; // Import combineReducers
+import { combineReducers } from "redux";
 import userReducer from "./reducers/user";
 import editorReducer from "./reducers/editor";
 import profileReducer from "./reducers/profile";
@@ -9,13 +9,14 @@ import { configureStore } from "@reduxjs/toolkit";
 const rootReducer = combineReducers({
   user: userReducer,
   editor: editorReducer,
-  profile: profileReducer
+  profile: profileReducer,
 });
 
 const persistConfig = {
-  key: "root",
+  key: "rooted",
   storage,
-  whitelist: ["user", "editor", "profile"], // Only persist the 'user' slice
+  // Persist only lightweight identity — trees/images load from Mongo
+  whitelist: ["user"],
 };
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);
