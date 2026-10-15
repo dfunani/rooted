@@ -11,19 +11,27 @@ export default function ResetPage() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function submit() {
-    const response = await fetch("/api/auth/password", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, password }),
-    });
-    if (response.ok) {
-      setDone(true);
-      setMessage("Password updated. You can sign in now.");
-    } else {
-      const data = await response.json();
-      setMessage(data.message || "Could not reset password.");
+    if (loading) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password }),
+      });
+      if (response.ok) {
+        setDone(true);
+        setMessage("Password updated. You can sign in now.");
+      } else {
+        const data = await response.json();
+        setMessage(data.message || "Could not reset password.");
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -45,10 +53,18 @@ export default function ResetPage() {
               type="password"
               placeholder="New password"
               value={password}
+              disabled={loading}
               onChange={(e) => setPassword(e.target.value)}
             />
-            <button type="button" className={styles.button} onClick={submit}>
-              Update password
+            <button
+              type="button"
+              className={styles.button}
+              onClick={submit}
+              disabled={loading}
+              aria-busy={loading}
+            >
+              {loading && <span className={styles.spinner} aria-hidden />}
+              {loading ? "Updating…" : "Update password"}
             </button>
           </div>
         ) : (

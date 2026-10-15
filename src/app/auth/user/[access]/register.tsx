@@ -14,6 +14,7 @@ import { RegistrationType } from "@/src/public/types/user";
 export default function Page() {
   const router = useRouter();
   const [submit, setSubmit] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [resolveText, setResolveText] = useState<string | null>(null);
   const [registration, setRegistration] = useState<RegistrationType>({
     email: "",
@@ -45,25 +46,46 @@ export default function Page() {
   }
 
   async function handleRegistration() {
-    const response = await fetch("/api/auth/user", {
-      method: "POST",
-      body: JSON.stringify(registration),
-      headers: { "Content-Type": "application/json" },
-    });
+    if (loading) return;
+    setLoading(true);
+    setResolveText(null);
+    try {
+      const response = await fetch("/api/auth/user", {
+        method: "POST",
+        body: JSON.stringify(registration),
+        headers: { "Content-Type": "application/json" },
+      });
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data.message?.emailVerificationRequired) {
-        router.push(`/auth/user/verify`);
-        return;
+      const data = await response.json().catch(() => ({}));
+      const serverMessage =
+        typeof data.message === "string" ? data.message : null;
+
+      if (response.ok) {
+        if (data.message?.emailVerificationRequired) {
+          const params = new URLSearchParams();
+          params.set("email", registration.email);
+          if (data.message.verifyUrl) {
+            params.set("link", data.message.verifyUrl);
+          }
+          if (data.message.emailQueued === false) {
+            params.set("delivery", "failed");
+          }
+          router.push(`/auth/user/verify?${params.toString()}`);
+          return;
+        }
+        router.push(`/auth/user/login?resolve=Created`);
+      } else if (response.status === 409) {
+        router.push(`/auth/user/login?resolve=Conflict`);
+      } else if (response.status === 429) {
+        setResolveText("Too many attempts. Please wait and try again.");
+      } else {
+        setResolveText(
+          serverMessage ||
+            "Invalid submission. Check password rules and all fields, then try again."
+        );
       }
-      router.push(`/auth/user/login?resolve=Created`);
-    } else if (response.status === 409) {
-      router.push(`/auth/user/login?resolve=Conflict`);
-    } else if (response.status === 429) {
-      setResolveText("Too many attempts. Please wait and try again.");
-    } else {
-      setResolveText("Invalid submission. Please complete all fields.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -87,6 +109,15 @@ export default function Page() {
             ? "Add a photo and a few details — you can edit them later."
             : "We’ll email a verification link before you can sign in."}
         </p>
+        {loading && (
+          <p className={styles.statusRow}>
+            <span
+              className={`${styles.spinner} ${styles.spinnerDark}`}
+              aria-hidden
+            />
+            Validating with the server…
+          </p>
+        )}
         {!submit && (
           <Login
             credentials={{
@@ -103,6 +134,8 @@ export default function Page() {
             registration={registration}
             handleUpdateRegistration={handleUpdateRegistration}
             handleRegistration={handleRegistration}
+            loading={loading}
+            loadingLabel="Creating your account…"
           />
         )}
       </div>

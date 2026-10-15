@@ -144,6 +144,10 @@
   cursor: pointer;
   flex: 1;
   transition: transform 160ms ease, background 160ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
 }
 
 .buttonSecondary {
@@ -152,13 +156,54 @@
   border: 1px solid var(--line);
 }
 
-.button:hover {
+.button:hover:not(:disabled) {
   transform: translateY(-1px);
   background: var(--moss);
 }
 
-.buttonSecondary:hover {
+.buttonSecondary:hover:not(:disabled) {
   background: var(--accent-soft);
+}
+
+.button:disabled {
+  opacity: 0.72;
+  cursor: wait;
+  transform: none;
+}
+
+.input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid rgba(238, 242, 237, 0.35);
+  border-top-color: #eef2ed;
+  animation: rooted-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.spinnerDark {
+  border-color: rgba(30, 61, 50, 0.2);
+  border-top-color: var(--forest);
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0;
+  color: var(--sage);
+  font-size: 0.95rem;
+}
+
+@keyframes rooted-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .error {

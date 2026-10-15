@@ -131,23 +131,35 @@ export default class User extends Model {
 
     let image = registration.image as string | null;
     if (image && isDataUrl(image)) {
-      const stored = await storeDataUrl(image, undefined);
-      image = stored.url;
+      try {
+        const stored = await storeDataUrl(image, undefined);
+        image = stored.url;
+      } catch (error) {
+        console.error("Registration image store failed:", error);
+        // Don't block account creation on photo upload failures
+        image = null;
+      }
     }
 
     const password = await client.hashPassword(registration.password);
     const email = client.encrypt(registration.email);
     const now = new Date();
 
-    // Auto-verify only when explicitly allowed (local smoke tests)
-    const autoVerify = process.env.AUTO_VERIFY_EMAIL === "true";
+    // Auto-verify when explicitly allowed, or when no mail provider is configured
+    const autoVerify =
+      process.env.AUTO_VERIFY_EMAIL === "true" ||
+      !process.env.RESEND_API_KEY;
 
     const document = await collection.insertOne({
-      ...registration,
+      name: registration.name,
+      surname: registration.surname,
+      dob: registration.dob,
+      city: registration.city,
+      country: registration.country,
       email,
       emailHash,
       password,
-      image,
+      image: image || null,
       emailVerified: autoVerify,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),

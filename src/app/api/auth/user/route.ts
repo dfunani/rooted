@@ -54,10 +54,23 @@ export async function POST(request: Request) {
   if (!limited.ok) return rateLimitResponse(limited.retryAfterSec);
 
   try {
+    const cryptoKey = process.env.CRYPTO_KEY ?? "";
+    if (Buffer.from(cryptoKey, "hex").length !== 32) {
+      console.error("CRYPTO_KEY must be 64 hex characters (32 bytes).");
+      return generateServerResponses(
+        "Server misconfigured (CRYPTO_KEY). Check Vercel env vars.",
+        503
+      );
+    }
+
     const res = await request.json();
     const registration = RegisterUser.safeParse(res);
     if (!registration.success) {
-      return generateServerResponses("Invalid User Request.", 400);
+      console.error("Register validation:", registration.error.flatten());
+      return generateServerResponses(
+        "Invalid registration. Check email, password (8+ chars, number, symbol), and all profile fields.",
+        400
+      );
     }
 
     const { db_url, db_name } = getDatabaseConfig();
@@ -67,15 +80,37 @@ export async function POST(request: Request) {
       return generateServerResponses("User Already Exists.", 409);
     }
 
+    let emailQueued = true;
+    let verifyUrl: string | null = null;
+    let emailError: string | null = null;
+
     if (!registeredUser.emailVerified) {
-      const tokens = new AuthTokenStore(db_url, db_name);
-      const { token } = await tokens.create({
-        kind: "email_verify",
-        userId: registeredUser.id,
-        email: registeredUser.plainEmail,
-        ttlMs: 24 * 60 * 60 * 1000,
-      });
-      await sendVerificationEmail(registeredUser.plainEmail, token);
+      try {
+        const tokens = new AuthTokenStore(db_url, db_name);
+        const { token } = await tokens.create({
+          kind: "email_verify",
+          userId: registeredUser.id,
+          email: registeredUser.plainEmail,
+          ttlMs: 24 * 60 * 60 * 1000,
+        });
+        const sent = await sendVerificationEmail(
+          registeredUser.plainEmail,
+          token
+        );
+        verifyUrl = sent.url;
+        emailQueued = sent.queued;
+        if (!sent.queued) {
+          emailError = sent.error ?? "Email provider rejected the message";
+          console.error("Verification email failed:", emailError);
+          // Always log the link so ops can recover accounts when Resend is misconfigured
+          console.info(`[rooted:verify-fallback] ${verifyUrl}`);
+        }
+      } catch (error) {
+        emailQueued = false;
+        emailError =
+          error instanceof Error ? error.message : "Email send failed";
+        console.error("Verification email exception:", error);
+      }
     }
 
     const data = FetchUser.safeParse({ id: registeredUser.id });
@@ -87,12 +122,27 @@ export async function POST(request: Request) {
       {
         ...data.data,
         emailVerificationRequired: !registeredUser.emailVerified,
+        emailQueued,
+        emailError,
+        // Fallback link when inbox delivery fails (e.g. invalid RESEND_API_KEY)
+        verifyUrl: !emailQueued ? verifyUrl : null,
       },
       201
     );
   } catch (error) {
     console.error(`User Error: ${error}`);
-    return generateServerResponses("Internal Server Error.", 500);
+    const message =
+      error instanceof Error ? error.message : "Internal Server Error.";
+    if (message.includes("Database") || message.includes("Invalid Application")) {
+      return generateServerResponses(
+        "Database unavailable. Check DB_URL / DB_NAME and Atlas network access.",
+        503
+      );
+    }
+    return generateServerResponses(
+      "Registration failed. Please try again in a moment.",
+      500
+    );
   }
 }
 

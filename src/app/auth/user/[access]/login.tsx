@@ -22,6 +22,8 @@ export default function Page() {
   });
   const [resolveText, setresolveText] = useState<string | null>(null);
   const [needsVerify, setNeedsVerify] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   function handleUpdateCredentials(key: string, value: string) {
     if (resolveText) setresolveText(null);
@@ -30,34 +32,46 @@ export default function Page() {
   }
 
   async function handleLogin() {
-    const response = await signIn("credentials", {
-      ...credentials,
-      redirect: false,
-      callbackUrl: "/",
-    });
+    if (loading) return;
+    setLoading(true);
+    setresolveText(null);
+    try {
+      const response = await signIn("credentials", {
+        ...credentials,
+        redirect: false,
+        callbackUrl: "/",
+      });
 
-    if (!response?.ok) {
-      setNeedsVerify(true);
-      setresolveText(
-        "Invalid email/password, or your email is not verified yet. You can resend a verification link below."
-      );
-      return;
+      if (!response?.ok) {
+        setNeedsVerify(true);
+        setresolveText(
+          "Invalid email/password, or your email is not verified yet. You can resend a verification link below."
+        );
+        return;
+      }
+      router.push("/");
+    } finally {
+      setLoading(false);
     }
-    router.push("/");
   }
 
   async function resendVerification() {
-    if (!credentials.email) return;
-    const response = await fetch("/api/auth/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: credentials.email }),
-    });
-    setresolveText(
-      response.ok
-        ? "If that account needs verification, we sent a new link."
-        : "Could not resend right now."
-    );
+    if (!credentials.email || resending) return;
+    setResending(true);
+    try {
+      const response = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: credentials.email }),
+      });
+      setresolveText(
+        response.ok
+          ? "If that account needs verification, we sent a new link."
+          : "Could not resend right now."
+      );
+    } finally {
+      setResending(false);
+    }
   }
 
   useEffect(() => {
@@ -87,6 +101,8 @@ export default function Page() {
           credentials={credentials}
           handleUpdateCredentials={handleUpdateCredentials}
           handleLogin={handleLogin}
+          loading={loading}
+          loadingLabel="Signing in…"
         />
         <p className={styles.subtitle}>
           <Link href="/auth/user/forgot">Forgot password?</Link>
@@ -97,8 +113,16 @@ export default function Page() {
             type="button"
             className={`${styles.button} ${styles.buttonSecondary}`}
             onClick={resendVerification}
+            disabled={resending || loading}
+            aria-busy={resending}
           >
-            Resend verification email
+            {resending && (
+              <span
+                className={`${styles.spinner} ${styles.spinnerDark}`}
+                aria-hidden
+              />
+            )}
+            {resending ? "Sending…" : "Resend verification email"}
           </button>
         )}
       </div>

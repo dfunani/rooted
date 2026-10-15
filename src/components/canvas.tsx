@@ -74,6 +74,7 @@ export default function Canvas() {
 
   const [paletteOpen, setPaletteOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
   const [pendingConnection, setPendingConnection] =
     useState<PendingConnection | null>(null);
@@ -193,6 +194,8 @@ export default function Canvas() {
   }
 
   async function saveNodes() {
+    if (saving) return;
+    setSaving(true);
     try {
       const response = await fetch("/api/editor", {
         method: "POST",
@@ -220,6 +223,8 @@ export default function Canvas() {
       );
     } catch {
       setToast({ text: "Couldn't save. Try again later.", status: "error" });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -402,8 +407,10 @@ export default function Canvas() {
                 type="button"
                 className={`${styles.toolbarButton} ${styles.toolbarButtonPrimary}`}
                 onClick={saveNodes}
+                disabled={saving}
+                aria-busy={saving}
               >
-                Save
+                {saving ? "Saving…" : "Save"}
               </button>
               <button
                 type="button"

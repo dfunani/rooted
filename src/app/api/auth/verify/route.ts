@@ -68,8 +68,19 @@ export async function POST(request: Request) {
       email: body.data.email,
       ttlMs: 24 * 60 * 60 * 1000,
     });
-    await sendVerificationEmail(body.data.email, token);
-    return generateServerResponses({ sent: true }, 200);
+    const sent = await sendVerificationEmail(body.data.email, token);
+    if (!sent.queued) {
+      console.info(`[rooted:verify-fallback] ${sent.url}`);
+    }
+    return generateServerResponses(
+      {
+        sent: true,
+        emailQueued: sent.queued,
+        verifyUrl: sent.queued ? null : sent.url,
+        emailError: sent.error ?? null,
+      },
+      200
+    );
   } catch (error) {
     console.error(error);
     return generateServerResponses("Internal Server Error.", 500);

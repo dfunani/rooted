@@ -10,12 +10,17 @@ type Props = {
   credentials: CredentialsType;
   handleUpdateCredentials: (key: string, value: string) => void;
   handleLogin: () => void;
+  loading?: boolean;
+  loadingLabel?: string;
 };
 
 export default function Login(props: Props) {
   const router = useRouter();
   const { access } = useParams();
   const param = access?.toString() ?? "";
+  const loading = Boolean(props.loading);
+  const primaryLabel =
+    props.loadingLabel || (param === "login" ? "Signing in…" : "Checking…");
 
   return (
     <div className={styles.form}>
@@ -26,6 +31,7 @@ export default function Login(props: Props) {
         type="email"
         placeholder="Email"
         value={props.credentials.email}
+        disabled={loading}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateCredentials(
             "email",
@@ -40,6 +46,7 @@ export default function Login(props: Props) {
         autoComplete={param === "login" ? "current-password" : "new-password"}
         placeholder="Password"
         value={props.credentials.password}
+        disabled={loading}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateCredentials(
             "password",
@@ -52,14 +59,22 @@ export default function Login(props: Props) {
           className={styles.button}
           onClick={() => props.handleLogin()}
           type="button"
+          disabled={loading}
+          aria-busy={loading}
         >
-          {param === "login" ? "Sign in" : "Continue"}
+          {loading && <span className={styles.spinner} aria-hidden />}
+          {loading
+            ? primaryLabel
+            : param === "login"
+              ? "Sign in"
+              : "Continue"}
         </button>
         {param === "login" && (
           <button
             className={`${styles.button} ${styles.buttonSecondary}`}
             onClick={() => router.push("/auth/user/register")}
             type="button"
+            disabled={loading}
           >
             Create account
           </button>
@@ -69,6 +84,7 @@ export default function Login(props: Props) {
             className={`${styles.button} ${styles.buttonSecondary}`}
             onClick={() => router.push("/auth/user/login")}
             type="button"
+            disabled={loading}
           >
             Sign in
           </button>

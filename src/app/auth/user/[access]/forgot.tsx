@@ -8,18 +8,28 @@ export default function ForgotPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function submit() {
-    const response = await fetch("/api/auth/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
-    const data = await response.json();
-    setMessage(
-      data.message ||
-        "If that account exists, a reset link was sent."
-    );
+    if (loading) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await response.json();
+      setMessage(
+        typeof data.message === "string"
+          ? data.message
+          : data.message?.message ||
+              "If that account exists, a reset link was sent."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -39,16 +49,25 @@ export default function ForgotPage() {
             type="email"
             placeholder="Email"
             value={email}
+            disabled={loading}
             onChange={(e) => setEmail(e.target.value)}
           />
           <div className={styles.section}>
-            <button type="button" className={styles.button} onClick={submit}>
-              Send reset link
+            <button
+              type="button"
+              className={styles.button}
+              onClick={submit}
+              disabled={loading}
+              aria-busy={loading}
+            >
+              {loading && <span className={styles.spinner} aria-hidden />}
+              {loading ? "Sending…" : "Send reset link"}
             </button>
             <button
               type="button"
               className={`${styles.button} ${styles.buttonSecondary}`}
               onClick={() => router.push("/auth/user/login")}
+              disabled={loading}
             >
               Back
             </button>

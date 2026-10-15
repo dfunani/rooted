@@ -5,29 +5,24 @@ import { ChangeEvent, useState } from "react";
 import styles from "@/src/public/styles/auth.module.css";
 import AddButton from "@/src/components/add-button";
 import { RegistrationType } from "@/src/public/types/user";
-import { uploadImageFile } from "@/src/public/utils/upload";
 
 type Props = {
   registration: Omit<RegistrationType, "email" | "password">;
   handleUpdateRegistration: (key: string, value: string) => void;
   handleRegistration: () => void;
   submitLabel?: string;
+  loading?: boolean;
+  loadingLabel?: string;
 };
 
 export default function Registration(props: Props) {
   const [uploading, setUploading] = useState(false);
+  const busy = Boolean(props.loading) || uploading;
 
   async function handleUpdateImage(file: File) {
     setUploading(true);
     try {
-      // Prefer media API when signed in; during registration fall back to data URL
-      // (server stores it in GridFS/S3 on createUser / updateUser).
-      const url = await uploadImageFile(file);
-      if (url) {
-        props.handleUpdateRegistration("image", url);
-        return;
-      }
-
+      // Registration is unauthenticated — skip /api/media and use a data URL.
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result ?? ""));
@@ -49,6 +44,7 @@ export default function Registration(props: Props) {
           name="Picture"
           id="picture"
           accept="image/*"
+          disabled={busy}
           onChange={async (event: ChangeEvent) => {
             const response = event.target as HTMLInputElement;
             const files = response.files;
@@ -69,7 +65,8 @@ export default function Registration(props: Props) {
         </div>
       </div>
       {uploading && (
-        <p className={styles.subtitle} style={{ textAlign: "center" }}>
+        <p className={styles.statusRow} style={{ justifyContent: "center" }}>
+          <span className={`${styles.spinner} ${styles.spinnerDark}`} aria-hidden />
           Uploading photo…
         </p>
       )}
@@ -79,6 +76,7 @@ export default function Registration(props: Props) {
         type="text"
         placeholder="First name"
         required
+        disabled={busy}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
             "name",
@@ -92,6 +90,7 @@ export default function Registration(props: Props) {
         type="text"
         placeholder="Surname"
         required
+        disabled={busy}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
             "surname",
@@ -104,6 +103,7 @@ export default function Registration(props: Props) {
         aria-label="Date of Birth"
         type="date"
         required
+        disabled={busy}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
             "dob",
@@ -117,6 +117,7 @@ export default function Registration(props: Props) {
         required
         type="text"
         placeholder="City"
+        disabled={busy}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
             "city",
@@ -130,6 +131,7 @@ export default function Registration(props: Props) {
         required
         type="text"
         placeholder="Country"
+        disabled={busy}
         onChange={(event: ChangeEvent) =>
           props.handleUpdateRegistration(
             "country",
@@ -142,8 +144,13 @@ export default function Registration(props: Props) {
           className={styles.button}
           onClick={() => props.handleRegistration()}
           type="button"
+          disabled={busy}
+          aria-busy={busy}
         >
-          {props.submitLabel ?? "Create my tree"}
+          {props.loading && <span className={styles.spinner} aria-hidden />}
+          {props.loading
+            ? props.loadingLabel || "Creating account…"
+            : props.submitLabel ?? "Create my tree"}
         </button>
       </div>
     </div>
